@@ -418,9 +418,10 @@ if isfield(handles,'movObj')||isfield(handles,'BIm')||isfield(handles,'ImStack')
 
     frame_no = round(get(handles.frame_slider,'Value'));
 
-    handles.start_frame = frame_no + handles.start_frame;
+    % handles.start_frame = frame_no + handles.start_frame; % Comment out so start frame is always one
 
-    handles.NumFrames = handles.NumFrames-handles.start_frame+1;
+    % handles.NumFrames = handles.NumFrames-handles.start_frame+1;
+    handles.NumFrames = handles.NumFrames - frame_no + 1;
 
     handles.Time = handles.Time(handles.start_frame:handles.start_frame + handles.NumFrames-1);
 
@@ -1086,9 +1087,19 @@ if isfield(handles,'Region')
 
             time = handles.Time;
             %determine any non-zero entries in fascicle length array
-            nz = logical(handles.Region(i).fas_length(:,1) ~= 0);
-
-            T = time(nz)';
+            nz=find(handles.Region(i).fas_length(:,1) ~= 0);
+            %set up Fdat structure
+            Fdat.Region(i) = handles.Region(i);
+            %deals with time mismatch if you have cut the video
+            if length(nz)==length(time)
+                T=time';
+                Fdat.Region(i).Time = time();
+            elseif length(time)>length(nz)
+                T = time(nz)';
+                Fdat.Region(i).Time = time(nz);
+            else
+                disp('error:more fascicle length data than time data')
+            end
 
             TrackingData.res = handles.ID;
             TrackingData.start_frame = handles.start_frame;
@@ -1113,7 +1124,7 @@ if isfield(handles,'Region')
                 Fdat.geofeatures = handles.geofeatures;
             end
 
-            Fdat.Region(i) = handles.Region(i);
+            % Fdat.Region(i) = handles.Region(i);
             Fdat.Region(i).FL = handles.Region(i).fas_length(nz,:)';
             Fdat.Region(i).PEN = handles.Region(i).fas_pen(nz,:)';
             Fdat.Region(i).ANG = handles.Region(i).fas_ang(nz,:)';
@@ -1122,8 +1133,14 @@ if isfield(handles,'Region')
     end
 end
 
-filename = [handles.pname, handles.fname(1:end-4), '_tracked_Q=',strrep(num2str(handles.Q),'.','')];
-save(filename,'TrackingData','Fdat');
+% Change naming convention to choose your own file save location (same as txt file)
+% filename = [handles.pname, handles.fname(1:end-4), '_tracked_Q=',strrep(num2str(handles.Q),'.','')];
+% save(filename,'TrackingData','Fdat');
+
+fileout_suggest = [handles.pname handles.fname(1:end-3) 'mat'];
+[fileout, pathout] = uiputfile(fileout_suggest,'Save fascicle data as...');
+% cd(pathout);
+save([ pathout fileout ],'TrackingData','Fdat');
 
 % --- Executes on key press with focus on figure1 and none of its controls.
 function figure1_KeyPressFcn(hObject, eventdata, handles)
@@ -2504,7 +2521,8 @@ set(handles.D, 'EdgeAlpha',0,'FaceAlpha',0.1,'InteractionsAllowed','none')
 % parms.fas.range = 90 - [-90 89];
 
 % find the first frame
-frame_no = handles.start_frame + round(get(handles.frame_slider,'Value')) - 1; 
+% frame_no = handles.start_frame + round(get(handles.frame_slider,'Value')) - 1; 
+frame_no = round(get(handles.frame_slider,'Value')); % Use current frame
 
 % % detect orientation
 data = imresize(handles.ImStack(:,:,frame_no), 1/handles.imresize_fac);
