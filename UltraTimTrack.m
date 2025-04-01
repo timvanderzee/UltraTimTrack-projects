@@ -1626,12 +1626,14 @@ function[handles] = process_all_Callback(hObject, eventdata, handles)
 % clear previous tracking
 handles = menu_clear_tracking_Callback(hObject, eventdata, handles);
 
+%based on chkBox backward tracking goes to first or last frame
+%necessary as it needs later to check whether pts to be tracked are already
+%loaded, otherwise autodetect 
 if handles.trackbck_chkBox.Value == 0
     frame_no = 1;%handles.start_frame;
     set(handles.frame_slider,'Value',frame_no);
     set(handles.frame_number,'String',num2str(frame_no));
-else
-    
+else    
     frame_no = handles.NumFrames;
     set(handles.frame_slider,'Value',frame_no);
     set(handles.frame_number,'String',num2str(handles.NumFrames));
@@ -1658,7 +1660,7 @@ end
 
 if ~handles.TimTrack_mode.Value
     try
-        if handles.trackbck_chkBox.Value == 1
+        if handles.trackbck_chkBox.Value == 1 %do backwards tracking but with correct indexing
             handles = process_all_UltraTrack_backwards(hObject, eventdata, handles);
         else
             handles = process_all_UltraTrack(hObject, eventdata, handles);
@@ -1981,16 +1983,17 @@ function[handles] = process_all_TimTrack(hObject, eventdata, handles)
 
 % run TimTrack on all frames
 frames = (handles.start_frame):(handles.start_frame + handles.NumFrames-1);
-% Check the value of the checkbox
-if handles.trackbck_chkBox.Value
-    % get the first (or better last frame) from auto_detect
-    geofeatures(handles.NumFrames+handles.start_frame-1) = handles.geofeatures(handles.NumFrames+handles.start_frame-1);
-    
+% Check the value of the checkbox, necessary for correcting indexing as
+% such values were saved at the detected frame (first or last)
+if handles.trackbck_chkBox.Value == 1
+    % get the first (in this case is the last frame) from auto_detect into
+    % geofeatuer struct
+    geofeatures(handles.NumFrames+handles.start_frame-1) = handles.geofeatures(handles.NumFrames+handles.start_frame-1);    
 else
-    % get the first from auto_detect
-    geofeatures(handles.start_frame) = handles.geofeatures(handles.start_frame);
-    
+    % or get the first from auto_detect
+    geofeatures(handles.start_frame) = handles.geofeatures(handles.start_frame);    
 end
+
 numIterations = length(frames);
 
 parms = handles.parms;
@@ -2030,6 +2033,7 @@ if isfield(handles,'ImStack')
     
     if ~strcmp(answer,'Cancel')
         for i = 1:length(handles.Region)
+            %adjust frames to track according to forward or backward
             frames_to_track = frames(2:end) -  handles.trackbck_chkBox.Value;
             
             % TimTrack (parfor or for)
@@ -2042,7 +2046,8 @@ if isfield(handles,'ImStack')
                 parfor f = frames_to_track %based on frames and backwards adjustment up
                     %f - handles.trackbck_chkBox.Value because if backwards
                     %also frame 1, can't do f-handles.trackbck_chkBox.Value
-                    %because it's a parfor
+                    %because it's a parfor so you would changes each index
+                    %within a loop,so pointer will be screwed.
                     
                     geofeatures(f) = auto_ultrasound(im2(:,:,f), parms);
                     WaitMessage.Send; %update waitbar parfor
@@ -2068,21 +2073,20 @@ if isfield(handles,'ImStack')
             % Adjust the parameter of geofeatures
             for kk = frames(1:end)
                 
+                %if is not first frame or last, we need to resize (for the
+                %resize factor)
                 if kk > frames(1)  && ~handles.trackbck_chkBox.Value
                     geofeatures(kk).fas_coef(2)     = geofeatures(kk).fas_coef(2) * handles.imresize_fac;
-                    %geofeatures(kk).super_lccoef(2) = geofeatures(kk).super_coef(2) * handles.imresize_fac;
                     geofeatures(kk).super_coef(2)   =  geofeatures(kk).super_coef(2) * handles.imresize_fac;
                     geofeatures(kk).deep_coef(2)    = geofeatures(kk).deep_coef(2) * handles.imresize_fac;
                     geofeatures(kk).thickness       = geofeatures(kk).thickness * handles.imresize_fac;
                     geofeatures(kk).faslen          = geofeatures(kk).faslen * handles.imresize_fac;
                 elseif kk < frames(end) && handles.trackbck_chkBox.Value
                     geofeatures(kk).fas_coef(2)     = geofeatures(kk).fas_coef(2) * handles.imresize_fac;
-                    %geofeatures(kk).super_lccoef(2) = geofeatures(kk).super_coef(2) * handles.imresize_fac;
                     geofeatures(kk).super_coef(2) = geofeatures(kk).super_coef(2) * handles.imresize_fac;
                     geofeatures(kk).deep_coef(2)    = geofeatures(kk).deep_coef(2) * handles.imresize_fac;
                     geofeatures(kk).thickness       = geofeatures(kk).thickness * handles.imresize_fac;
-                    geofeatures(kk).faslen          = geofeatures(kk).faslen * handles.imresize_fac;
-                    
+                    geofeatures(kk).faslen          = geofeatures(kk).faslen * handles.imresize_fac;                    
                 end
                 
                 % get vertical locations at image boundaries
@@ -2104,6 +2108,7 @@ if isfield(handles,'ImStack')
                 handles.Region(i).ROIx{kk} = [1 1 n n 1]';
                 handles.Region(i).ROIy{kk} = [polyval(geofeatures(kk).super_coef, 1); polyval(geofeatures(kk).deep_coef, [1 n]'); polyval(geofeatures(kk).super_coef, [n 1]')];
                 
+                %if not first or last update fas pts
                 if kk > frames(1) && ~handles.trackbck_chkBox.Value
                     handles.Region.Fascicle.fas_x{kk} = [Deep_intersect_x Super_intersect_x]';
                     handles.Region.Fascicle.fas_y{kk} = [Deep_intersect_y Super_intersect_y]';
