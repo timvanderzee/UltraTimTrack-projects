@@ -1660,11 +1660,11 @@ end
 
 if ~handles.TimTrack_mode.Value
     try
-        if handles.trackbck_chkBox.Value == 1 %do backwards tracking but with correct indexing
-            handles = process_all_UltraTrack_backwards(hObject, eventdata, handles);
-        else
+%         if handles.trackbck_chkBox.Value == 1 %do backwards tracking but with correct indexing
+%             handles = process_all_UltraTrack_backwards(hObject, eventdata, handles);
+%         else
             handles = process_all_UltraTrack(hObject, eventdata, handles);
-        end
+%         end
         
         if contains(handles.ROItype, 'Hough')
             % % State estimation
@@ -1696,11 +1696,23 @@ h = waitbar(0,['Processing frame 1/', num2str(handles.NumFrames)],'Name','Runnin
 
 tstart = tic;
 
-frames = handles.start_frame:(handles.start_frame + handles.NumFrames-1);
+if handles.trackbck_chkBox.Value == 1
+    frames = (handles.start_frame + handles.NumFrames-1):-1:handles.start_frame;
+else
+    frames = handles.start_frame:(handles.start_frame + handles.NumFrames-1);
+end
+
 % numIterations = length(frames);
 
 for i = 1:length(handles.Region)
     for f = frames
+        
+        % previous frame
+        if handles.trackbck_chkBox.Value == 1
+            fprev = f+1;
+        else
+            fprev = f-1;
+        end
         
         % extract image
         im = handles.ImStack(:,:,f);
@@ -1772,7 +1784,7 @@ for i = 1:length(handles.Region)
         
         for j = 1:length(handles.Region(i).Fascicle)
             
-            if f == handles.start_frame
+            if f == frames(1)
                 % detect points
                 fpoints = detectMinEigenFeatures(I_fmasked,'FilterSize',11, 'MinQuality', 0.005);
                 
@@ -1835,17 +1847,17 @@ for i = 1:length(handles.Region)
                 % Compute the flow and new roi
                 [fpointsNew, isFound] = step(fpointTracker, im);
                 [wf,~] = estimateGeometricTransform2D(fpoints(isFound,:), fpointsNew(isFound,:), 'affine', 'MaxDistance',50);
-                handles.Region(i).warp(:,:,f-1) = wf;
+                handles.Region(i).warp(:,:,fprev) = wf;
                 
                 if contains(handles.ROItype, 'Hough')
                     % Compute the flow and new roi
                     [apointsNew, isFound] = step(apointTracker, im);
                     [wa,~] = estimateGeometricTransform2D(apoints(isFound,:), apointsNew(isFound,:), 'affine', 'MaxDistance',50);
-                    handles.Region(i).awarp(:,:,f-1) = wa;
+                    handles.Region(i).awarp(:,:,fprev) = wa;
                 end
                 
                 % apply the warp to fascicles
-                fas_prev = [handles.Region(i).Fascicle(j).fas_x{f-1} handles.Region(i).Fascicle(j).fas_y{f-1}];
+                fas_prev = [handles.Region(i).Fascicle(j).fas_x{fprev} handles.Region(i).Fascicle(j).fas_y{fprev}];
                 fas_new = transformPointsForward(wf, fas_prev);
                 
                 % save
@@ -1860,10 +1872,10 @@ for i = 1:length(handles.Region)
                 if contains(handles.ROItype, 'Hough')
                     
                     % apply warp to aponeurosis
-                    super_prev = [handles.Region(i).sup_x{f-1} handles.Region(i).sup_y{f-1}];
+                    super_prev = [handles.Region(i).sup_x{fprev} handles.Region(i).sup_y{fprev}];
                     super_new = transformPointsForward(wa, super_prev);
                     
-                    deep_prev = [handles.Region(i).deep_x{f-1} handles.Region(i).deep_y{f-1}];
+                    deep_prev = [handles.Region(i).deep_x{fprev} handles.Region(i).deep_y{fprev}];
                     deep_new = transformPointsForward(wa, deep_prev);
                     
                     % save
@@ -1882,7 +1894,7 @@ for i = 1:length(handles.Region)
                     
                 else
                     % apply warp to ROI
-                    ROIpos = transformPointsForward(wf, [handles.Region(i).ROIx{f-1} handles.Region(i).ROIy{f-1}]);
+                    ROIpos = transformPointsForward(wf, [handles.Region(i).ROIx{fprev} handles.Region(i).ROIy{fprev}]);
                     
                     ROIx = ROIpos(:,1);
                     ROIy = ROIpos(:,2);
@@ -2177,76 +2189,43 @@ if ~isnan(handles.Q)
     handles = estimate_variance(hObject, eventdata, handles);
     
     if handles.trackbck_chkBox.Value == 0
-        %%here they are for normal forward  Optic flow tracking
-        % forward state estimation
-        for f = (handles.start_frame+1):length(handles.geofeatures)
-            for i = 1:length(handles.Region)
-                for j = 1:length(handles.Region(i).Fascicle)
-                    % state estimation
-                    handles = apo_state_estimator(handles,f,f-1);
-                end
-            end
-        end
-        
-        % forward state estimation
-        for f = (handles.start_frame+1):length(handles.geofeatures)
-            for i = 1:length(handles.Region)
-                for j = 1:length(handles.Region(i).Fascicle)
-                    % state estimation
-                    handles = state_estimator(handles,f,f-1);
-                end
-            end
-        end
-        
-        %     Rauch-Tung-Striebel backwards filter
-        for f = (length(handles.geofeatures)-1):-1:handles.start_frame
-            for i = 1:length(handles.Region)
-                for j = 1:length(handles.Region(i).Fascicle)
-                    handles = state_smoothener(handles,f,f+1);
-                end
-            end
-        end
-        
-    else %%% backwards estimator for backwards opticflow tracking
-        %%here they are for normal forward  Optic flow tracking
-        % forward state estimation
-        
-        for f = (handles.NumFrames+handles.start_frame-1) :-1 : (handles.start_frame)+1
-            for i = 1:length(handles.Region)
-                for j = 1:length(handles.Region(i).Fascicle)
-                    %frame_geo = (f - (handles.NumFrames))+1; %old
-                    %solution with no cutting including
-                    %frame_geo = (handles.NumFrames + handles.start_frame - 1) - (f - handles.start_frame); % Direct calculation
-                    % state estimation
-                    handles = apo_state_estimator(handles,f-1,f);
-                    
-                end
-            end
-        end
-        
-        % forward state estimation
-        for f = (handles.NumFrames+handles.start_frame-1) :-1 :(handles.start_frame)+1
-            for i = 1:length(handles.Region)
-                for j = 1:length(handles.Region(i).Fascicle)
-                    %frame_geo = -(f - (handles.NumFrames));
-                    %frame_geo = (handles.NumFrames + handles.start_frame - 1) - (f - handles.start_frame); % Direct calculation
-                    
-                    % state estimation
-                    handles = state_estimator(handles,f-1,f);
-                end
-            end
-        end
-        
-        %         Rauch-Tung-Striebel backwards filter
-        for f = handles.start_frame +1 :  handles.NumFrames+handles.start_frame-1
-            for i = 1:length(handles.Region)
-                for j = 1:length(handles.Region(i).Fascicle)
-                    handles = state_smoothener(handles,f,f-1);
-                end
-            end
-        end
-        
+        frames = (handles.start_frame+1):length(handles.geofeatures);
+        flip_frames = (length(handles.geofeatures)-1):-1:handles.start_frame;
+    else
+        frames = (handles.NumFrames+handles.start_frame-1) :-1 : (handles.start_frame)+1;
+        flip_frames = handles.start_frame +1 :  handles.NumFrames+handles.start_frame-1;
     end
+        
+    %%here they are for normal forward  Optic flow tracking
+    % forward state estimation
+    for f = frames
+        for i = 1:length(handles.Region)
+            for j = 1:length(handles.Region(i).Fascicle)
+                % state estimation
+                handles = apo_state_estimator(handles,f,f-1);
+            end
+        end
+    end
+
+    % forward state estimation
+    for f = frames
+        for i = 1:length(handles.Region)
+            for j = 1:length(handles.Region(i).Fascicle)
+                % state estimation
+                handles = state_estimator(handles,f,f-1);
+            end
+        end
+    end
+
+    %     Rauch-Tung-Striebel backwards filter
+    for f = flip_frames
+        for i = 1:length(handles.Region)
+            for j = 1:length(handles.Region(i).Fascicle)
+                handles = state_smoothener(handles,f,f+1);
+            end
+        end
+    end
+
     show_image(hObject,handles);
     show_data(hObject, handles);
     guidata(hObject, handles);
@@ -3657,8 +3636,8 @@ end
         
         handles = extract_estimates(hObject, eventdata, handles);
         
-        % if the first frame or in TimTrack mode, accept manual tracking
-        if frame_no == handles.start_frame || handles.TimTrack_mode.Value
+        % if the first or last frame or in TimTrack mode, accept manual tracking
+        if frame_no == handles.start_frame || frame_no == (handles.start_frame + handles.NumFrames-1) || handles.TimTrack_mode.Value
             handles.Region(i).Fascicle(j).fas_x{frame_no} = handles.Region(i).Fascicle(j).fas_x_manual{frame_no};
             handles.Region(i).Fascicle(j).fas_y{frame_no} = handles.Region(i).Fascicle(j).fas_y_manual{frame_no};
             
