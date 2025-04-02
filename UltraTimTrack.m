@@ -1660,11 +1660,9 @@ end
 
 if ~handles.TimTrack_mode.Value
     try
-%         if handles.trackbck_chkBox.Value == 1 %do backwards tracking but with correct indexing
-%             handles = process_all_UltraTrack_backwards(hObject, eventdata, handles);
-%         else
+
             handles = process_all_UltraTrack(hObject, eventdata, handles);
-%         end
+
         
         if contains(handles.ROItype, 'Hough')
             % % State estimation
@@ -2189,39 +2187,37 @@ if ~isnan(handles.Q)
     handles = estimate_variance(hObject, eventdata, handles);
     
     if handles.trackbck_chkBox.Value == 0
-        frames = (handles.start_frame+1):length(handles.geofeatures);
-        flip_frames = (length(handles.geofeatures)-1):-1:handles.start_frame;
+        frames = handles.start_frame:length(handles.geofeatures);
     else
-        frames = (handles.NumFrames+handles.start_frame-1) :-1 : (handles.start_frame)+1;
-        flip_frames = handles.start_frame +1 :  handles.NumFrames+handles.start_frame-1;
+        frames = length(handles.geofeatures):-1:handles.start_frame;
     end
+    
+    % reversed order
+    reversed_frames = flip(frames);
         
-    %%here they are for normal forward  Optic flow tracking
-    % forward state estimation
-    for f = frames
+    % aponeurosis state estimation
+    for f = 2:length(frames)
         for i = 1:length(handles.Region)
             for j = 1:length(handles.Region(i).Fascicle)
-                % state estimation
-                handles = apo_state_estimator(handles,f,f-1);
+                handles = apo_state_estimator(handles,frames(f),frames(f-1));
             end
         end
     end
 
-    % forward state estimation
-    for f = frames
+    % fascicle state estimation
+    for f = 2:length(frames)
         for i = 1:length(handles.Region)
             for j = 1:length(handles.Region(i).Fascicle)
-                % state estimation
-                handles = state_estimator(handles,f,f-1);
+                handles = state_estimator(handles,frames(f),frames(f-1));
             end
         end
     end
 
-    %     Rauch-Tung-Striebel backwards filter
-    for f = flip_frames
+    % Rauch-Tung-Striebel backwards filter
+    for f = 2:length(reversed_frames)
         for i = 1:length(handles.Region)
             for j = 1:length(handles.Region(i).Fascicle)
-                handles = state_smoothener(handles,f,f+1);
+                handles = state_smoothener(handles,reversed_frames(f),reversed_frames(f-1));
             end
         end
     end
@@ -3387,11 +3383,9 @@ if sum(tmp ~= handles.BlockSize) ~= 0 %if the Block changed, then check and run 
             if sum(~cellfun(@isempty, handles.Region.Fascicle.fas_x, 'UniformOutput', true)) >= handles.NumFrames
                 %if size(handles.Region(i).Fascicle.analysed_frames,2) > 0 %double check this
                 
-                if handles.trackbck_chkBox.Value == 0
-                    handles = process_all_UltraTrack(hObject, eventdata, handles);
-                else
-                    handles = process_all_UltraTrack_backwards(hObject, eventdata, handles);
-                end
+
+                handles = process_all_UltraTrack(hObject, eventdata, handles);
+
                 %try estimation (depending on hough tracked or not
                 try
                     % State estimation
@@ -3810,304 +3804,6 @@ else
 end
 
 
-
-%%%% Ultratrack (KLT optic flow)
-function [handles] = process_all_UltraTrack_backwards(hObject, eventdata, handles)
-
-%need to flip here for optic flow?
-% if handles.trackbck_chkBox.Value == 1
-%     handles.geofeatures = flip(handles.geofeatures);
-%     handles.ImStack = flip(handles.ImStack,3);
-% end
-
-im1 = handles.ImStack(:,:,handles.NumFrames-1);
-h = waitbar(1,['Processing frame '  num2str(handles.NumFrames) '/', num2str(handles.NumFrames)],'Name','Running UltraTrack...');
-
-tstart = tic;
-
-frames = (handles.NumFrames+handles.start_frame)-1 : -1 : handles.start_frame; %<-- the last frame is treated as 1because start frame is only an index
-
-% numIterations = length(frames);
-
-for i = 1:length(handles.Region)
-    for f = frames
-        
-        % extract image
-        im = handles.ImStack(:,:,f);
-        
-        % make a copy
-        I_fmasked = im;
-        
-        if isfield(handles,'geofeatures') && strcmp(handles.ROItype, 'Hough - local')
-            M = zeros(size(im1,1), size(im1,2), handles.parms.fas.npeaks);
-            
-            for j = 1:handles.parms.fas.npeaks
-                x1 = handles.geofeatures(f).x(j,1) * handles.imresize_fac;
-                y1 = handles.geofeatures(f).y(j,1) * handles.imresize_fac;
-                
-                x2 = handles.geofeatures(f).x(j,2) * handles.imresize_fac;
-                y2 = handles.geofeatures(f).y(j,2) * handles.imresize_fac;
-                
-                dy = 5; %what is 5?
-                
-                ROIx = [x1 x1 x2 x2 x1];
-                ROIy = [y1-dy y1+dy y2+dy y2-dy y1-dy]';
-                
-                if sum(isfinite(ROIx)) == length(ROIx) && sum(isfinite(ROIy)) == length(ROIy)
-                    M(:,:,j) = poly2mask(ROIx,ROIy, size(im1,1), size(im1,2));
-                end
-            end
-            
-            % mask
-            fmask = sum(M,3);
-            fmask(fmask>1) = 1;
-            
-            I_fmasked(fmask~=1) = 0;
-        end
-        
-        
-        % get current ROI
-        if contains(handles.ROItype, 'Hough')
-            I_amasked = im;
-            
-            n = handles.vidWidth;
-            ROIx = [1 1 n n 1]';
-            super_apo = handles.geofeatures(f).super_pos';
-            deep_apo = handles.geofeatures(f).deep_pos';
-            thickness = deep_apo - super_apo;
-            
-            r = .1;
-            ROIy_fcor = round([super_apo(1)+thickness(1)*r; deep_apo-thickness*r; super_apo([2,1])+thickness([2,1])*r]);
-            
-            % mask
-            fmask = poly2mask(ROIx, ROIy_fcor, size(im,1), size(im,2));
-            I_fmasked(fmask~=1) = 0;
-            
-            m = handles.vidHeight;
-            
-            s = handles.parms.apo.super.cut;
-            ROIys = [s(1) s(2) s(2) s(1) s(1)] * m;
-            
-            d = handles.parms.apo.deep.cut;
-            ROIyd = [d(1) d(2) d(2) d(1) d(1)] * m;
-            
-            dmask =  poly2mask(ROIx, ROIyd, size(im,1), size(im,2));
-            smask =  poly2mask(ROIx, ROIys, size(im,1), size(im,2));
-            
-            amask = dmask + smask;
-            amask(amask > 1) = 1;
-            I_amasked(amask~=1) = 0;
-        end
-        
-        
-        for j = 1:length(handles.Region(i).Fascicle)
-            
-            if f == (handles.NumFrames+handles.start_frame)-1
-                % detect points
-                fpoints = detectMinEigenFeatures(I_fmasked,'FilterSize',11, 'MinQuality', 0.005);
-                
-                if contains(handles.ROItype, 'Hough')
-                    fpoints = fpoints.selectStrongest(300);
-                end
-                
-                % get location
-                fpoints = double(fpoints.Location);
-                
-                % must be in ROI
-                ROIy = handles.Region(i).ROIy{f};
-                ROIx = handles.Region(i).ROIx{f};
-                inPoints = inpolygon(fpoints(:,1), fpoints(:,2), ROIx, ROIy);
-                fpoints = fpoints(inPoints,:);
-                
-                % define fascicle tracker
-                fpointTracker = vision.PointTracker('NumPyramidLevels',4,'MaxIterations',50,'MaxBidirectionalError',inf,'BlockSize',handles.BlockSize);
-                initialize(fpointTracker,fpoints,im);
-                
-                if contains(handles.ROItype, 'Hough')
-                    % define aponeurosis tracker
-                    apoints = detectMinEigenFeatures(I_amasked,'FilterSize',11, 'MinQuality', 0.005);
-                    apoints =  double(apoints.Location);
-                    apointTracker = vision.PointTracker('NumPyramidLevels',4,'MaxIterations',50,'MaxBidirectionalError',inf,'BlockSize',handles.BlockSize);
-                    initialize(apointTracker,apoints,im);
-                end
-            else
-                
-                if ~exist('fpointTracker','var')
-                    
-                    fpoints = detectMinEigenFeatures(I_fmasked,'FilterSize',11, 'MinQuality', 0.005);
-                    
-                    if contains(handles.ROItype, 'Hough')
-                        fpoints = fpoints.selectStrongest(300);
-                    end
-                    
-                    % get location
-                    fpoints = double(fpoints.Location);
-                    
-                    % must be in ROI
-                    ROIy = handles.Region(i).ROIy{f};
-                    ROIx = handles.Region(i).ROIx{f};
-                    inPoints = inpolygon(fpoints(:,1), fpoints(:,2), ROIx, ROIy);
-                    fpoints = fpoints(inPoints,:);
-                    
-                    % define fascicle tracker
-                    fpointTracker = vision.PointTracker('NumPyramidLevels',4,'MaxIterations',50,'MaxBidirectionalError',inf,'BlockSize',handles.BlockSize);
-                    initialize(fpointTracker,fpoints,im);
-                    
-                    if contains(handles.ROItype, 'Hough')
-                        % define aponeurosis tracker
-                        apoints = detectMinEigenFeatures(I_amasked,'FilterSize',11, 'MinQuality', 0.005);
-                        apoints =  double(apoints.Location);
-                        apointTracker = vision.PointTracker('NumPyramidLevels',4,'MaxIterations',50,'MaxBidirectionalError',inf,'BlockSize',handles.BlockSize);
-                        initialize(apointTracker,apoints,im);
-                    end
-                    
-                end
-                % Compute the flow and new roi
-                [fpointsNew, isFound] = step(fpointTracker, im);
-                [wf,~] = estimateGeometricTransform2D(fpoints(isFound,:), fpointsNew(isFound,:), 'affine', 'MaxDistance',50);
-                handles.Region(i).warp(:,:,f+1) = wf;
-                
-                if contains(handles.ROItype, 'Hough')
-                    % Compute the flow and new roi
-                    [apointsNew, isFound] = step(apointTracker, im);
-                    [wa,~] = estimateGeometricTransform2D(apoints(isFound,:), apointsNew(isFound,:), 'affine', 'MaxDistance',50);
-                    handles.Region(i).awarp(:,:,f+1) = wa;
-                end
-                
-                % apply the warp to fascicles
-                fas_prev = [handles.Region(i).Fascicle(j).fas_x{f+1} handles.Region(i).Fascicle(j).fas_y{f+1}];
-                fas_new = transformPointsForward(wf, fas_prev);
-                
-                % save
-                handles.Region(i).Fascicle(j).fas_x{f} = fas_new(:,1);
-                handles.Region(i).Fascicle(j).fas_y{f} = fas_new(:,2);
-                
-                % make a copy
-                handles.Region(i).Fascicle(j).fas_x_original{f} = handles.Region(i).Fascicle(j).fas_x{f};
-                handles.Region(i).Fascicle(j).fas_y_original{f} = handles.Region(i).Fascicle(j).fas_y{f};
-                
-                % in the new version, aponeurosis has its own warp (in the old version it doesnt)
-                if contains(handles.ROItype, 'Hough')
-                    
-                    % apply warp to aponeurosis
-                    super_prev = [handles.Region(i).sup_x{f+1} handles.Region(i).sup_y{f+1}];
-                    super_new = transformPointsForward(wa, super_prev);
-                    
-                    deep_prev = [handles.Region(i).deep_x{f+1} handles.Region(i).deep_y{f+1}];
-                    deep_new = transformPointsForward(wa, deep_prev);
-                    
-                    % save
-                    handles.Region(i).sup_x{f} = [1 n]';
-                    handles.Region(i).sup_y{f} = super_new(:,2);
-                    handles.Region(i).deep_x{f} = [1 n]';
-                    handles.Region(i).deep_y{f} = deep_new(:,2);
-                    
-                    % get ROI
-                    ROIx = [1 1 n n 1]';
-                    super_apo = handles.geofeatures(f).super_pos';
-                    deep_apo = handles.geofeatures(f).deep_pos';
-                    
-                    ROIy = [super_apo(1); deep_apo; super_apo([2,1])];
-                    ROIy_fcor = round([super_apo(1)+thickness(1)*r; deep_apo-thickness*r; super_apo([2,1])+thickness([2,1])*r]);
-                    
-                else
-                    % apply warp to ROI
-                    ROIpos = transformPointsForward(wf, [handles.Region(i).ROIx{f+1} handles.Region(i).ROIy{f+1}]);
-                    
-                    ROIx = ROIpos(:,1);
-                    ROIy = ROIpos(:,2);
-                    
-                    ROIx(ROIx > handles.vidWidth) = handles.vidWidth;
-                    ROIy(ROIy > handles.vidHeight) = handles.vidHeight;
-                    ROIx(ROIx < 1) = 1;
-                    ROIy(ROIy < 1) = 1;
-                    
-                    handles.Region(i).sup_x{f}  = ROIx([1,4]);
-                    handles.Region(i).sup_y{f}  = ROIy([1,4]);
-                    handles.Region(i).deep_x{f} = ROIx([2,3]);
-                    handles.Region(i).deep_y{f} = ROIy([2,3]);
-                end
-                
-                % save ROI
-                handles.Region(i).ROIx{f} = ROIx;
-                handles.Region(i).ROIy{f} = ROIy;
-                
-                % calculate the length and pennation for the current frame
-                handles = calc_fascicle_length_and_pennation(handles,f);
-                
-                % update the points
-                fpoints = fpointsNew;
-                
-                % if drops below 100, define new points
-                if length(fpoints) < 100 || ~strcmp(handles.ROItype(1:5), 'Hough')
-                    
-                    % detect points
-                    fpoints = detectMinEigenFeatures(I_fmasked,'FilterSize',11, 'MinQuality', 0.005);
-                    
-                    if strcmp(handles.ROItype(1:5), 'Hough')
-                        fpoints = fpoints.selectStrongest(300);
-                    end
-                    
-                    fpoints = double(fpoints.Location);
-                end
-                
-                % must be in ROI
-                if strcmp(handles.ROItype(1:5), 'Hough')
-                    inPoints = inpolygon(fpoints(:,1),fpoints(:,2), ROIx, ROIy_fcor);
-                else
-                    inPoints = inpolygon(fpoints(:,1),fpoints(:,2), ROIx, ROIy);
-                end
-                
-                fpoints = fpoints(inPoints,:);
-                
-                % set tracker
-                setPoints(fpointTracker, fpoints);
-                
-                % update the points
-                if strcmp(handles.ROItype(1:5), 'Hough')
-                    apoints = apointsNew;
-                    
-                    if length(apoints) < 500
-                        % detect points
-                        apoints = detectMinEigenFeatures(I_amasked,'FilterSize',11, 'MinQuality', 0.005);
-                        apoints = double(apoints.Location);
-                    end
-                    
-                    m = handles.vidHeight;
-                    
-                    s = handles.parms.apo.super.cut;
-                    ROIys = [s(1) s(2) s(2) s(1) s(1)]' * m;
-                    
-                    d = handles.parms.apo.deep.cut;
-                    ROIyd = [d(1) d(2) d(2) d(1) d(1)]' * m;
-                    
-                    % must be in ROI
-                    dinPoints = inpolygon(apoints(:,1),apoints(:,2), ROIx, ROIyd);
-                    sinPoints = inpolygon(apoints(:,1),apoints(:,2), ROIx, ROIys);
-                    apoints = apoints(dinPoints | sinPoints,:);
-                    
-                    % set tracker
-                    setPoints(apointTracker, apoints);
-                end
-            end
-            
-            % save the points
-            handles.points{f} = fpoints;
-            
-            if strcmp(handles.ROItype(1:5), 'Hough')
-                handles.apoints{f} = apoints;
-            end
-            
-        end
-        
-        frac_progress = ((f-handles.start_frame)+(get(handles.frame_slider,'Max')*(i-1))) / (get(handles.frame_slider,'Max')*length(handles.Region));
-        waitbar(frac_progress,h, ['Processing frame ', num2str((f-handles.start_frame)), '/', num2str(get(handles.frame_slider,'Max'))])
-    end
-    
-end
-
-close(h)
-handles.ProcessingTime(2) = toc(tstart);
 % --- Executes during object creation, after setting all properties.
 function trackbck_chkBox_CreateFcn(hObject, eventdata, handles)
 % hObject    handle to trackbck_chkBox (see GCBO)
