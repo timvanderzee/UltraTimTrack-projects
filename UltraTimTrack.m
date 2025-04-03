@@ -1623,8 +1623,9 @@ function[handles] = process_all_Callback(hObject, eventdata, handles)
 % detect first frame if required or last frame if backward tracking
 % & set the slider and frame number for clarity
 
-% clear previous tracking
-handles = menu_clear_tracking_Callback(hObject, eventdata, handles);
+% clear previous tracking --> however if fascicle is loaded, then it's
+% removed.
+% handles = menu_clear_tracking_Callback(hObject, eventdata, handles);
 
 %based on chkBox backward tracking goes to first or last frame
 %necessary as it needs later to check whether pts to be tracked are already
@@ -1638,7 +1639,7 @@ end
 set(handles.frame_slider,'Value',frame0);
 set(handles.frame_number,'String',num2str(frame0));
 
-if ~isfield(handles,'Region') || isnan(handles.Region(1).fas_length(frame_no+handles.start_frame-1))%fas length is in the correct index now
+if ~isfield(handles,'Region') || isnan(handles.Region(1).fas_length(frame0+handles.start_frame-1))%fas length is in the correct index now
     handles = Auto_Detect_Callback(hObject, eventdata, handles);
 end
 
