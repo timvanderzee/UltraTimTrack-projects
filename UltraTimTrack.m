@@ -374,8 +374,6 @@ else
     handles.Time = (double(1/handles.FrameRate):double(1/handles.FrameRate):double(handles.NumFrames/handles.FrameRate))';
 end
 
-handles.KeyframeInd = logical(0.0);
-
 if exist('TrackingData','var')
     chkload = questdlg('Do you want to load previous tracking?','Tracking data detected','Yes');
     if strcmp(chkload,'Yes')
@@ -1247,7 +1245,6 @@ set(hObject,'Interruptible','on');
 
 frame_no = round(get(handles.frame_slider,'Value'));
 end_frame = get(handles.frame_slider,'Max');
-handles.stop = 0;
 guidata(hObject,handles);
 
 for f = frame_no:end_frame
@@ -1485,15 +1482,8 @@ if isfield(handles,'ImStack')
             % add padding
             currentImage = [ZeroPadL, handles.ImStack(:,:,frame_no), ZeroPadR];
             
-            if isfield(handles.Region(i).Fascicle(j), 'fas_y_end') && ~isempty(handles.Region(i).Fascicle(j).fas_y_end{frame_no})
-                fasx = [handles.Region(i).Fascicle(j).fas_x_end{f}];
-                fasy = [handles.Region(i).Fascicle(j).fas_y_end{f}];
-                
-            else
-                fasx = handles.Region(i).Fascicle(j).fas_x{f};
-                fasy = handles.Region(i).Fascicle(j).fas_y{f};
-            end
-            
+            fasx = handles.Region(i).Fascicle(j).fas_x{f};
+            fasy = handles.Region(i).Fascicle(j).fas_y{f};
             
             if isfield(handles.Region(i).Fascicle(j), 'fas_x_manual') && length(handles.Region(i).Fascicle(j).fas_x_manual) >= frame_no
                 if ~isempty(handles.Region(i).Fascicle(j).fas_x_manual{frame_no})
@@ -1576,10 +1566,6 @@ if isfield(handles,'ImStack')
         handles.S = images.roi.Rectangle(handles.axes1,'position', [1 handles.parms.apo.super.cut(1)*handles.vidHeight handles.vidWidth diff(handles.parms.apo.super.cut)*handles.vidHeight],'color','blue');
         handles.D = images.roi.Rectangle(handles.axes1,'position', [1 handles.parms.apo.deep.cut(1)*handles.vidHeight handles.vidWidth diff(handles.parms.apo.deep.cut)*handles.vidHeight],'color','green');
     end
-    
-    % Update Im and NIm
-    handles.Im = Im;
-    handles.NIm = handles.Im;
     
     % remove previous vertical lines
     children = get(handles.length_plot, 'children');
@@ -2109,7 +2095,7 @@ j = 1;
 
 % Apply warp
 fas_prev = [handles.Region(i).Fascicle(j).fas_x{prev_frame_no} handles.Region(i).Fascicle(j).fas_y{prev_frame_no}];
-alpha_prev = handles.Region(i).Fascicle(j).alpha{prev_frame_no};
+alpha_prev = handles.Region(i).Fascicle(j).X_plus{prev_frame_no}(2);
 
 w = handles.Region(i).warp(:,:,prev_frame_no);
 fas_new = transformPointsForward(w, fas_prev);
@@ -2494,11 +2480,6 @@ fasy2_end = super_coef(2) + fasx2_end*super_coef(1);
 handles.Region(i).Fascicle(j).fas_x{frame_no}   = [fasx1_end; fasx2_plus];
 handles.Region(i).Fascicle(j).fas_y{frame_no}   = [fasy1_end; fasy2];
 
-handles.Region(i).Fascicle(j).fas_x_end{frame_no}   = [fasx1_end; fasx2_end];
-handles.Region(i).Fascicle(j).fas_y_end{frame_no}   = [fasy1_end; fasy2_end];
-
-handles.Region(i).Fascicle(j).alpha{frame_no}   = alpha_plus;
-
 handles = calc_fascicle_length_and_pennation(handles,frame_no);
 
 
@@ -2520,13 +2501,9 @@ gamma = atan2d(-diff(deep_apo(:,2)), diff(deep_apo(:,1)));
 handles.Region(i).fas_ang(frame_no,j) = atan2d(-diff(handles.Region(i).Fascicle(j).fas_y{frame_no}), diff(handles.Region(i).Fascicle(j).fas_x{frame_no}));
 handles.Region(i).fas_pen(frame_no,j) = handles.Region(i).fas_ang(frame_no,j) - gamma;
 
-if isfield(handles.Region(i).Fascicle(j), 'fas_y_end') && ~isempty(handles.Region(i).Fascicle(j).fas_y_end{frame_no})
-    fasx = handles.Region(i).Fascicle(j).fas_x_end{frame_no};
-    fasy = handles.Region(i).Fascicle(j).fas_y_end{frame_no};
-else
-    fasx = handles.Region(i).Fascicle(j).fas_x{frame_no};
-    fasy = handles.Region(i).Fascicle(j).fas_y{frame_no};
-end
+fasx = handles.Region(i).Fascicle(j).fas_x{frame_no};
+fasy = handles.Region(i).Fascicle(j).fas_y{frame_no};
+
 
 handles.Region(i).fas_length(frame_no,j) = (handles.ID/handles.vidHeight)*sqrt(diff(fasx).^2 + diff(fasy).^2);
 
@@ -2688,12 +2665,7 @@ if isfield(handles,"Region")
         for j = 1:numel(handles.Region(i).Fascicle)
             handles.Region(i).Fascicle(j).fas_x = cellfun(updateX, handles.Region(i).Fascicle(j).fas_x, 'UniformOutput', false);
             handles.Region(i).Fascicle(j).fas_y = cellfun(@flip, handles.Region(i).Fascicle(j).fas_y, 'UniformOutput', false);
-            
-            if isfield(handles.Region(i).Fascicle(j),'fas_x_end') %if estimator ran
-                handles.Region(i).Fascicle(j).fas_x_end = cellfun(updateX, handles.Region(i).Fascicle(j).fas_x_end, 'UniformOutput', false);
-                handles.Region(i).Fascicle(j).fas_y_end = cellfun(@flip, handles.Region(i).Fascicle(j).fas_y_end, 'UniformOutput', false);
-            end
-            
+                       
             if isfield(handles.Region(i).Fascicle(j),'fas_x_manual') %if estimator ran
                 handles.Region(i).Fascicle(j).fas_x_manual = cellfun(updateX, handles.Region(i).Fascicle(j).fas_x_manual, 'UniformOutput', false);
                 handles.Region(i).Fascicle(j).fas_y_manual = cellfun(@flip, handles.Region(i).Fascicle(j).fas_y_manual, 'UniformOutput', false);
@@ -3561,9 +3533,6 @@ handles.Region(i).fas_pen_manual       = nan(N,1);
 handles.Region(i).Fascicle(j).fas_x = handles.Region(i).Fascicle(j).fas_x_original;
 handles.Region(i).Fascicle(j).fas_y = handles.Region(i).Fascicle(j).fas_y_original;
 
-handles.Region(i).Fascicle(j).fas_x_end = handles.Region(i).Fascicle(j).fas_x_original;
-handles.Region(i).Fascicle(j).fas_y_end = handles.Region(i).Fascicle(j).fas_y_original;
-
 rmfields = {'sup_x_manual', 'sup_y_manual','deep_x_manual','deep_y_manual','ROIx_manual','ROIy_manual','fas_ang_manual'};
 
 for j = 1:length(rmfields)
@@ -3827,9 +3796,6 @@ for frame_no = 1:n
     
     handles.Region.Fascicle.fas_x{frame_no} = apo_intersect(:,1);
     handles.Region.Fascicle.fas_y{frame_no} = apo_intersect(:,2);
-    
-    handles.Region.Fascicle.fas_x_end{frame_no}  = handles.Region.Fascicle.fas_x{frame_no} ;
-    handles.Region.Fascicle.fas_y_end{frame_no}  = handles.Region.Fascicle.fas_y{frame_no} ;
     
     handles = calc_fascicle_length_and_pennation(handles,frame_no);
     
