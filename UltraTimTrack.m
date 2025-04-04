@@ -1620,45 +1620,40 @@ function[handles] = process_all_Callback(hObject, eventdata, handles)
 % eventdata  reserved - to be defined in a future version of MATLAB
 % handles    structure with handles and user data (see GUIDATA)
 
-% detect first frame if required or last frame if backward tracking
-% & set the slider and frame number for clarity
-
-% clear previous tracking --> however if fascicle is loaded, then it's
-% removed.
-% handles = menu_clear_tracking_Callback(hObject, eventdata, handles);
-
-%based on chkBox backward tracking goes to first or last frame
-%necessary as it needs later to check whether pts to be tracked are already
-%loaded, otherwise autodetect 
+% based on chkBox backward tracking goes to first or last frame
+% necessary as it needs later to check whether pts to be tracked are already
+% loaded, otherwise autodetect 
 if handles.trackbck_chkBox.Value == 0
     frame0 = 1;
 else
     frame0 = handles.NumFrames;
 end
 
+% set the slider and frame number for clarity
 set(handles.frame_slider,'Value',frame0);
 set(handles.frame_number,'String',num2str(frame0));
 
+% detect first frame if required or last frame if backward tracking
 if ~isfield(handles,'Region') || isnan(handles.Region(1).fas_length(frame0+handles.start_frame-1))%fas length is in the correct index now
     handles = Auto_Detect_Callback(hObject, eventdata, handles);
 end
 
 % Run TimTrack
-if contains(handles.ROItype, 'Hough')
-    handles = process_all_TimTrack(hObject, eventdata, handles);
-end
+handles = process_all_TimTrack(hObject, eventdata, handles);
 
+% reset fas_x and fas_y to original values
+i = 1;
+j = 1;
+frame_no = handles.start_frame;
+handles.Region(i).Fascicle(j).fas_x{frame_no} = handles.Region(i).Fascicle(j).fas_x_original{frame_no};
+handles.Region(i).Fascicle(j).fas_y{frame_no} = handles.Region(i).Fascicle(j).fas_y_original{frame_no};
 
 if ~handles.TimTrack_mode.Value
-
-    % run ultratrack
+    % Run Ultratrack
     handles = process_all_UltraTrack(hObject, eventdata, handles);
 
-    if contains(handles.ROItype, 'Hough')
-    % % State estimation
+    % Do state estimation
     handles = do_state_estimation(hObject, eventdata, handles);
-    end
-
 end
 
 % update the image axes using show_image function (bottom)
@@ -1667,309 +1662,7 @@ show_data(hObject, handles);
 % Update handles structure
 guidata(hObject, handles);
 
-%%%% Ultratrack (KLT optic flow)
-function[handles] = process_all_UltraTrack(hObject, eventdata, handles)
-
-im1 = handles.ImStack(:,:,handles.start_frame+1);
-h = waitbar(0,['Processing frame 1/', num2str(handles.NumFrames)],'Name','Running UltraTrack...');
-
-tstart = tic;
-
-if handles.trackbck_chkBox.Value == 1
-    frames = (handles.start_frame + handles.NumFrames-1):-1:handles.start_frame;
-else
-    frames = handles.start_frame:(handles.start_frame + handles.NumFrames-1);
-end
-
-% numIterations = length(frames);
-
-for i = 1:length(handles.Region)
-    for f = frames
-        
-        % previous frame
-        if handles.trackbck_chkBox.Value == 1
-            fprev = f+1;
-        else
-            fprev = f-1;
-        end
-        
-        % extract image
-        im = handles.ImStack(:,:,f);
-        
-        % make a copy
-        I_fmasked = im;
-        
-        if isfield(handles,'geofeatures') && strcmp(handles.ROItype, 'Hough - local')
-            M = zeros(size(im1,1), size(im1,2), handles.parms.fas.npeaks);
-            
-            for j = 1:handles.parms.fas.npeaks
-                x1 = handles.geofeatures(f).x(j,1) * handles.imresize_fac;
-                y1 = handles.geofeatures(f).y(j,1) * handles.imresize_fac;
-                
-                x2 = handles.geofeatures(f).x(j,2) * handles.imresize_fac;
-                y2 = handles.geofeatures(f).y(j,2) * handles.imresize_fac;
-                
-                dy = 5; %what is 5?
-                
-                ROIx = [x1 x1 x2 x2 x1];
-                ROIy = [y1-dy y1+dy y2+dy y2-dy y1-dy]';
-                
-                if sum(isfinite(ROIx)) == length(ROIx) && sum(isfinite(ROIy)) == length(ROIy)
-                    M(:,:,j) = poly2mask(ROIx,ROIy, size(im1,1), size(im1,2));
-                end
-            end
-            
-            % mask
-            fmask = sum(M,3);
-            fmask(fmask>1) = 1;
-            
-            I_fmasked(fmask~=1) = 0;
-        end
-        
-        
-        % get current ROI
-        if contains(handles.ROItype, 'Hough')
-            I_amasked = im;
-            
-            n = handles.vidWidth;
-            ROIx = [1 1 n n 1]';
-            super_apo = handles.geofeatures(f).super_pos';
-            deep_apo = handles.geofeatures(f).deep_pos';
-            thickness = deep_apo - super_apo;
-            
-            r = .1;
-            ROIy_fcor = round([super_apo(1)+thickness(1)*r; deep_apo-thickness*r; super_apo([2,1])+thickness([2,1])*r]);
-            
-            % mask
-            fmask = poly2mask(ROIx, ROIy_fcor, size(im,1), size(im,2));
-            I_fmasked(fmask~=1) = 0;
-            
-            m = handles.vidHeight;
-            
-            s = handles.parms.apo.super.cut;
-            ROIys = [s(1) s(2) s(2) s(1) s(1)] * m;
-            
-            d = handles.parms.apo.deep.cut;
-            ROIyd = [d(1) d(2) d(2) d(1) d(1)] * m;
-            
-            dmask =  poly2mask(ROIx, ROIyd, size(im,1), size(im,2));
-            smask =  poly2mask(ROIx, ROIys, size(im,1), size(im,2));
-            
-            amask = dmask + smask;
-            amask(amask > 1) = 1;
-            I_amasked(amask~=1) = 0;
-        end
-        
-        
-        for j = 1:length(handles.Region(i).Fascicle)
-            
-            if f == frames(1)
-                % detect points
-                fpoints = detectMinEigenFeatures(I_fmasked,'FilterSize',11, 'MinQuality', 0.005);
-                
-                if contains(handles.ROItype, 'Hough')
-                    fpoints = fpoints.selectStrongest(300);
-                end
-                
-                % get location
-                fpoints = double(fpoints.Location);
-                
-                % must be in ROI
-                ROIy = handles.Region(i).ROIy{f};
-                ROIx = handles.Region(i).ROIx{f};
-                inPoints = inpolygon(fpoints(:,1), fpoints(:,2), ROIx, ROIy);
-                fpoints = fpoints(inPoints,:);
-                
-                % define fascicle tracker
-                fpointTracker = vision.PointTracker('NumPyramidLevels',4,'MaxIterations',50,'MaxBidirectionalError',inf,'BlockSize',handles.BlockSize);
-                initialize(fpointTracker,fpoints,im);
-                
-                if contains(handles.ROItype, 'Hough')
-                    % define aponeurosis tracker
-                    apoints = detectMinEigenFeatures(I_amasked,'FilterSize',11, 'MinQuality', 0.005);
-                    apoints =  double(apoints.Location);
-                    apointTracker = vision.PointTracker('NumPyramidLevels',4,'MaxIterations',50,'MaxBidirectionalError',inf,'BlockSize',handles.BlockSize);
-                    initialize(apointTracker,apoints,im);
-                end
-            else
-                
-                if ~exist('fpointTracker','var')
-                    
-                    fpoints = detectMinEigenFeatures(I_fmasked,'FilterSize',11, 'MinQuality', 0.005);
-                    
-                    if contains(handles.ROItype, 'Hough')
-                        fpoints = fpoints.selectStrongest(300);
-                    end
-                    
-                    % get location
-                    fpoints = double(fpoints.Location);
-                    
-                    % must be in ROI
-                    ROIy = handles.Region(i).ROIy{f};
-                    ROIx = handles.Region(i).ROIx{f};
-                    inPoints = inpolygon(fpoints(:,1), fpoints(:,2), ROIx, ROIy);
-                    fpoints = fpoints(inPoints,:);
-                    
-                    % define fascicle tracker
-                    fpointTracker = vision.PointTracker('NumPyramidLevels',4,'MaxIterations',50,'MaxBidirectionalError',inf,'BlockSize',handles.BlockSize);
-                    initialize(fpointTracker,fpoints,im);
-                    
-                    if contains(handles.ROItype, 'Hough')
-                        % define aponeurosis tracker
-                        apoints = detectMinEigenFeatures(I_amasked,'FilterSize',11, 'MinQuality', 0.005);
-                        apoints =  double(apoints.Location);
-                        apointTracker = vision.PointTracker('NumPyramidLevels',4,'MaxIterations',50,'MaxBidirectionalError',inf,'BlockSize',handles.BlockSize);
-                        initialize(apointTracker,apoints,im);
-                    end
-                    
-                end
-                % Compute the flow and new roi
-                [fpointsNew, isFound] = step(fpointTracker, im);
-                [wf,~] = estimateGeometricTransform2D(fpoints(isFound,:), fpointsNew(isFound,:), 'affine', 'MaxDistance',50);
-                handles.Region(i).warp(:,:,fprev) = wf;
-                
-                if contains(handles.ROItype, 'Hough')
-                    % Compute the flow and new roi
-                    [apointsNew, isFound] = step(apointTracker, im);
-                    [wa,~] = estimateGeometricTransform2D(apoints(isFound,:), apointsNew(isFound,:), 'affine', 'MaxDistance',50);
-                    handles.Region(i).awarp(:,:,fprev) = wa;
-                end
-                
-                % apply the warp to fascicles
-                fas_prev = [handles.Region(i).Fascicle(j).fas_x{fprev} handles.Region(i).Fascicle(j).fas_y{fprev}];
-                fas_new = transformPointsForward(wf, fas_prev);
-                
-                % save
-                handles.Region(i).Fascicle(j).fas_x{f} = fas_new(:,1);
-                handles.Region(i).Fascicle(j).fas_y{f} = fas_new(:,2);
-                
-                % make a copy
-                handles.Region(i).Fascicle(j).fas_x_original{f} = handles.Region(i).Fascicle(j).fas_x{f};
-                handles.Region(i).Fascicle(j).fas_y_original{f} = handles.Region(i).Fascicle(j).fas_y{f};
-                
-                % in the new version, aponeurosis has its own warp (in the old version it doesnt)
-                if contains(handles.ROItype, 'Hough')
-                    
-                    % apply warp to aponeurosis
-                    super_prev = [handles.Region(i).sup_x{fprev} handles.Region(i).sup_y{fprev}];
-                    super_new = transformPointsForward(wa, super_prev);
-                    
-                    deep_prev = [handles.Region(i).deep_x{fprev} handles.Region(i).deep_y{fprev}];
-                    deep_new = transformPointsForward(wa, deep_prev);
-                    
-                    % save
-                    handles.Region(i).sup_x{f} = [1 n]';
-                    handles.Region(i).sup_y{f} = super_new(:,2);
-                    handles.Region(i).deep_x{f} = [1 n]';
-                    handles.Region(i).deep_y{f} = deep_new(:,2);
-                    
-                    % get ROI
-                    ROIx = [1 1 n n 1]';
-                    super_apo = handles.geofeatures(f).super_pos';
-                    deep_apo = handles.geofeatures(f).deep_pos';
-                    
-                    ROIy = [super_apo(1); deep_apo; super_apo([2,1])];
-                    ROIy_fcor = round([super_apo(1)+thickness(1)*r; deep_apo-thickness*r; super_apo([2,1])+thickness([2,1])*r]);
-                    
-                else
-                    % apply warp to ROI
-                    ROIpos = transformPointsForward(wf, [handles.Region(i).ROIx{fprev} handles.Region(i).ROIy{fprev}]);
-                    
-                    ROIx = ROIpos(:,1);
-                    ROIy = ROIpos(:,2);
-                    
-                    ROIx(ROIx > handles.vidWidth) = handles.vidWidth;
-                    ROIy(ROIy > handles.vidHeight) = handles.vidHeight;
-                    ROIx(ROIx < 1) = 1;
-                    ROIy(ROIy < 1) = 1;
-                    
-                    handles.Region(i).sup_x{f}  = ROIx([1,4]);
-                    handles.Region(i).sup_y{f}  = ROIy([1,4]);
-                    handles.Region(i).deep_x{f} = ROIx([2,3]);
-                    handles.Region(i).deep_y{f} = ROIy([2,3]);
-                end
-                
-                % save ROI
-                handles.Region(i).ROIx{f} = ROIx;
-                handles.Region(i).ROIy{f} = ROIy;
-                
-                % calculate the length and pennation for the current frame
-                handles = calc_fascicle_length_and_pennation(handles,f);
-                
-                % update the points
-                fpoints = fpointsNew;
-                
-                % if drops below 100, define new points
-                if length(fpoints) < 100 || ~strcmp(handles.ROItype(1:5), 'Hough')
-                    
-                    % detect points
-                    fpoints = detectMinEigenFeatures(I_fmasked,'FilterSize',11, 'MinQuality', 0.005);
-                    
-                    if strcmp(handles.ROItype(1:5), 'Hough')
-                        fpoints = fpoints.selectStrongest(300);
-                    end
-                    
-                    fpoints = double(fpoints.Location);
-                end
-                
-                % must be in ROI
-                if strcmp(handles.ROItype(1:5), 'Hough')
-                    inPoints = inpolygon(fpoints(:,1),fpoints(:,2), ROIx, ROIy_fcor);
-                else
-                    inPoints = inpolygon(fpoints(:,1),fpoints(:,2), ROIx, ROIy);
-                end
-                
-                fpoints = fpoints(inPoints,:);
-                
-                % set tracker
-                setPoints(fpointTracker, fpoints);
-                
-                % update the points
-                if strcmp(handles.ROItype(1:5), 'Hough')
-                    apoints = apointsNew;
-                    
-                    if length(apoints) < 500
-                        % detect points
-                        apoints = detectMinEigenFeatures(I_amasked,'FilterSize',11, 'MinQuality', 0.005);
-                        apoints = double(apoints.Location);
-                    end
-                    
-                    m = handles.vidHeight;
-                    
-                    s = handles.parms.apo.super.cut;
-                    ROIys = [s(1) s(2) s(2) s(1) s(1)]' * m;
-                    
-                    d = handles.parms.apo.deep.cut;
-                    ROIyd = [d(1) d(2) d(2) d(1) d(1)]' * m;
-                    
-                    % must be in ROI
-                    dinPoints = inpolygon(apoints(:,1),apoints(:,2), ROIx, ROIyd);
-                    sinPoints = inpolygon(apoints(:,1),apoints(:,2), ROIx, ROIys);
-                    apoints = apoints(dinPoints | sinPoints,:);
-                    
-                    % set tracker
-                    setPoints(apointTracker, apoints);
-                end
-            end
-            
-            % save the points
-            handles.points{f} = fpoints;
-            
-            if strcmp(handles.ROItype(1:5), 'Hough')
-                handles.apoints{f} = apoints;
-            end
-            
-        end
-        
-        frac_progress = ((f-handles.start_frame)+(get(handles.frame_slider,'Max')*(i-1))) / (get(handles.frame_slider,'Max')*length(handles.Region));
-        waitbar(frac_progress,h, ['Processing frame ', num2str((f-handles.start_frame+1)), '/', num2str(get(handles.frame_slider,'Max'))])
-    end
-    
-end
-close(h)
-handles.ProcessingTime(2) = toc(tstart);
-
-%%%%%%% TimTrack process
+%%%%%%% TimTrack
 function[handles] = process_all_TimTrack(hObject, eventdata, handles)
 
 % run TimTrack on all frames
@@ -1977,6 +1670,12 @@ if handles.trackbck_chkBox.Value == 1
     frames = (handles.start_frame + handles.NumFrames-1):-1:(handles.start_frame);
 else
     frames = (handles.start_frame):(handles.start_frame + handles.NumFrames-1);
+end
+
+% remove super_pos and deep_pos from geofeatures
+if isfield(handles.geofeatures, 'super_pos')
+    handles.geofeatures = rmfield(handles.geofeatures, 'super_pos');
+    handles.geofeatures = rmfield(handles.geofeatures, 'deep_pos');
 end
 
 % get the first estimate from auto_detect
@@ -2077,8 +1776,13 @@ if isfield(handles,'ImStack')
                 handles.Region(i).deep_x{kk} = [1 n]';
                 handles.Region(i).deep_y{kk} = polyval(geofeatures(kk).deep_coef, [1 n]');
                 
+                super_apo = geofeatures(kk).super_pos';
+                deep_apo = geofeatures(kk).deep_pos';
+                thickness = deep_apo - super_apo;
+                r = .1; % fraction of thickness
+     
                 handles.Region(i).ROIx{kk} = [1 1 n n 1]';
-                handles.Region(i).ROIy{kk} = [polyval(geofeatures(kk).super_coef, 1); polyval(geofeatures(kk).deep_coef, [1 n]'); polyval(geofeatures(kk).super_coef, [n 1]')];
+                handles.Region(i).ROIy{kk} = round([super_apo(1)+thickness(1)*r; deep_apo-thickness*r; super_apo([2,1])+thickness([2,1])*r]);
                 
                 %if not first or last update fas pts
                 if kk ~= frames(1)  
@@ -2095,42 +1799,215 @@ if isfield(handles,'ImStack')
             
             handles.geofeatures = geofeatures;
         end
-    end
-    
+    end 
 end
 
-function[handles] = estimate_variance(hObject, eventdata, handles)
+%%%% Ultratrack (KLT optic flow)
+function[handles] = process_all_UltraTrack(hObject, eventdata, handles)
 
-geofeatures = handles.geofeatures;
-x = nan(handles.NumFrames+handles.start_frame-1,5);
+% 3 ROItypes are supported:
+% - Hough - local (default): ROI is based on detected fascicles from Hough
+% transform. Advantage: more precisely tracking fascicles. Disadvantage:
+% fewer feature points. 
+% - Hough - global: ROI is based on detected aponeuroses from Hough
+% transform. Advantage: more feature points. Disadvantage: less precisely
+% tracking fascicles. 
+% - Optical flow: ROI of first frame is based on detected aponeuroses from
+% Hough transform, but all other frames are based on optical flow. Note:
+% this ROI drifts over time. 
 
-for f = handles.start_frame:handles.NumFrames+handles.start_frame-1
-    x(f,1) = geofeatures(f).alpha;
-    x(f,2) = geofeatures(f).super_pos(1);
-    x(f,3) = geofeatures(f).super_pos(2);
-    x(f,4) = geofeatures(f).deep_pos(1);
-    x(f,5) = geofeatures(f).deep_pos(1);
-end
+h = waitbar(0,['Processing frame 1/', num2str(handles.NumFrames)],'Name','Running UltraTrack...');
 
-Wn = 1.5*handles.fc_lpf / (.5 * handles.FrameRate);
-Wn(Wn>=1) = 1-1e-6;
-Wn(Wn<=0) = 1e-6;
-[b,a] = butter(2, Wn, 'high');
+tstart = tic;
 
-xcya = isnan(x(:,1));
-x(xcya,:) = [];
-
-y = nan(size(x));
-if size(x,1) > 6
-    for i = 1:size(x,2)
-        y(:,i) = filtfilt(b,a,x(:,i));
-    end
-    
+if handles.trackbck_chkBox.Value == 1
+    frames = (handles.start_frame + handles.NumFrames-1):-1:handles.start_frame;
 else
-    y = x;
+    frames = handles.start_frame:(handles.start_frame + handles.NumFrames-1);
 end
 
-handles.R = var(y);
+n = handles.vidWidth;
+m = handles.vidHeight;
+        
+for i = 1:length(handles.Region)
+    for f = frames
+        
+        % previous frame
+        if handles.trackbck_chkBox.Value == 1
+            fprev = f+1;
+        else
+            fprev = f-1;
+        end
+        
+        % extract image
+        im = handles.ImStack(:,:,f);
+        
+        % get masked image
+        [I_fmasked, I_amasked] = get_masked_image(im, f, handles);
+           
+        % get ROI
+        ROIy = handles.Region(i).ROIy{f};
+        ROIx = handles.Region(i).ROIx{f};
+
+        for j = 1:length(handles.Region(i).Fascicle)
+           
+            if f == frames(1) || ~exist('fpointTracker','var') % first frame: detect points
+                % detect points
+                fpoints = detectMinEigenFeatures(I_fmasked,'FilterSize',11, 'MinQuality', 0.005);
+                
+                if contains(handles.ROItype, 'Hough')
+                    fpoints = fpoints.selectStrongest(300);
+                end
+                
+                % get location
+                fpoints = double(fpoints.Location);
+                
+                % points must be in ROI
+                inPoints = inpolygon(fpoints(:,1), fpoints(:,2), ROIx, ROIy);
+                fpoints = fpoints(inPoints,:);
+                
+                % define fascicle tracker
+                fpointTracker = vision.PointTracker('NumPyramidLevels',4,'MaxIterations',50,'MaxBidirectionalError',inf,'BlockSize',handles.BlockSize);
+                initialize(fpointTracker,fpoints,im);
+                
+                % seperately track aponeurosis
+                if contains(handles.ROItype, 'Hough')
+                    % define aponeurosis tracker
+                    apoints = detectMinEigenFeatures(I_amasked,'FilterSize',11, 'MinQuality', 0.005);
+                    apoints =  double(apoints.Location);
+                    apointTracker = vision.PointTracker('NumPyramidLevels',4,'MaxIterations',50,'MaxBidirectionalError',inf,'BlockSize',handles.BlockSize);
+                    initialize(apointTracker,apoints,im);
+                end
+                
+            else % not the first frame
+                
+                % Compute the flow and new roi
+                [fpointsNew, isFound] = step(fpointTracker, im);
+                [wf,~] = estimateGeometricTransform2D(fpoints(isFound,:), fpointsNew(isFound,:), 'affine', 'MaxDistance',50);
+                handles.Region(i).warp(:,:,fprev) = wf;
+                
+                % apply the warp to fascicles
+                fas_prev = [handles.Region(i).Fascicle(j).fas_x{fprev} handles.Region(i).Fascicle(j).fas_y{fprev}];
+                fas_new = transformPointsForward(wf, fas_prev);
+                
+                % save
+                handles.Region(i).Fascicle(j).fas_x{f} = fas_new(:,1);
+                handles.Region(i).Fascicle(j).fas_y{f} = fas_new(:,2);
+                
+                % make a copy
+                handles.Region(i).Fascicle(j).fas_x_original{f} = handles.Region(i).Fascicle(j).fas_x{f};
+                handles.Region(i).Fascicle(j).fas_y_original{f} = handles.Region(i).Fascicle(j).fas_y{f};
+                
+                % in ROItype = Hough, seperately track the aponeuroses
+                if contains(handles.ROItype, 'Hough')
+                    
+                    % Compute the flow and new roi
+                    [apointsNew, isFound] = step(apointTracker, im);
+                    [wa,~] = estimateGeometricTransform2D(apoints(isFound,:), apointsNew(isFound,:), 'affine', 'MaxDistance',50);
+                    handles.Region(i).awarp(:,:,fprev) = wa;
+                    
+                    % apply warp to aponeurosis
+                    super_prev = [handles.Region(i).sup_x{fprev} handles.Region(i).sup_y{fprev}];
+                    super_new = transformPointsForward(wa, super_prev);
+                    
+                    deep_prev = [handles.Region(i).deep_x{fprev} handles.Region(i).deep_y{fprev}];
+                    deep_new = transformPointsForward(wa, deep_prev);
+                    
+                    % save
+                    handles.Region(i).sup_x{f} = [1 n]';
+                    handles.Region(i).sup_y{f} = super_new(:,2);
+                    handles.Region(i).deep_x{f} = [1 n]';
+                    handles.Region(i).deep_y{f} = deep_new(:,2);
+   
+                else % in ROItype = Optical flow, don't use TimTrack ROI, but compute it from optical flow
+                    % apply warp to ROI
+                    ROIpos = transformPointsForward(wf, [handles.Region(i).ROIx{fprev} handles.Region(i).ROIy{fprev}]);
+                    
+                    ROIx = ROIpos(:,1);
+                    ROIy = ROIpos(:,2);
+                    
+                    ROIx(ROIx > handles.vidWidth) = handles.vidWidth;
+                    ROIy(ROIy > handles.vidHeight) = handles.vidHeight;
+                    ROIx(ROIx < 1) = 1;
+                    ROIy(ROIy < 1) = 1;
+                    
+                    handles.Region(i).sup_x{f}  = ROIx([1,4]);
+                    handles.Region(i).sup_y{f}  = ROIy([1,4]);
+                    handles.Region(i).deep_x{f} = ROIx([2,3]);
+                    handles.Region(i).deep_y{f} = ROIy([2,3]);
+                end
+                
+                % save ROI
+                handles.Region(i).ROIx{f} = ROIx;
+                handles.Region(i).ROIy{f} = ROIy;
+                
+                % calculate the length and pennation for the current frame
+                handles = calc_fascicle_length_and_pennation(handles,f);
+                
+                % update the points
+                fpoints = fpointsNew;
+                
+                % if drops below 100, define new points
+                if length(fpoints) < 100 || ~strcmp(handles.ROItype(1:5), 'Hough')
+                    
+                    % detect points
+                    fpoints = detectMinEigenFeatures(I_fmasked,'FilterSize',11, 'MinQuality', 0.005);
+                    
+                    if strcmp(handles.ROItype(1:5), 'Hough')
+                        fpoints = fpoints.selectStrongest(300);
+                    end
+                    
+                    fpoints = double(fpoints.Location);
+                end
+                
+                % points must be in ROI
+                inPoints = inpolygon(fpoints(:,1),fpoints(:,2), ROIx, ROIy);
+                fpoints = fpoints(inPoints,:);                
+
+                % save the points
+                handles.points{f} = fpoints;
+                
+                % set tracker
+                setPoints(fpointTracker, fpoints);
+                
+                % update the points
+                if strcmp(handles.ROItype(1:5), 'Hough')
+                    apoints = apointsNew;
+                    
+                    if length(apoints) < 500
+                        % detect points
+                        apoints = detectMinEigenFeatures(I_amasked,'FilterSize',11, 'MinQuality', 0.005);
+                        apoints = double(apoints.Location);
+                    end
+                    
+                    s = handles.parms.apo.super.cut;
+                    ROIys = [s(1) s(2) s(2) s(1) s(1)]' * m;
+                    
+                    d = handles.parms.apo.deep.cut;
+                    ROIyd = [d(1) d(2) d(2) d(1) d(1)]' * m;
+                    
+                    % must be in ROI
+                    dinPoints = inpolygon(apoints(:,1),apoints(:,2), ROIx, ROIyd);
+                    sinPoints = inpolygon(apoints(:,1),apoints(:,2), ROIx, ROIys);
+                    apoints = apoints(dinPoints | sinPoints,:);
+                    
+                    % save the points
+                    handles.apoints{f} = apoints;
+                    
+                    % set tracker
+                    setPoints(apointTracker, apoints);
+                end
+            end            
+        end
+        
+        frac_progress = ((f-handles.start_frame)+(get(handles.frame_slider,'Max')*(i-1))) / (get(handles.frame_slider,'Max')*length(handles.Region));
+        waitbar(frac_progress,h, ['Processing frame ', num2str((f-handles.start_frame+1)), '/', num2str(get(handles.frame_slider,'Max'))])
+    end
+    
+end
+close(h)
+handles.ProcessingTime(2) = toc(tstart);
+
 
 function[handles] = do_state_estimation(hObject, eventdata, handles)
 % hObject    handle to do_state_estimation (see GCBO)
@@ -2147,9 +2024,9 @@ if ~isnan(handles.Q)
         frames = length(handles.geofeatures):-1:handles.start_frame;
     end
     
-    % reversed order
-    reversed_frames = flip(frames);
-        
+    % initialize state estimator
+    handles = initialize_state_estimator(handles);
+    
     % aponeurosis state estimation
     for f = 2:length(frames)
         for i = 1:length(handles.Region)
@@ -2167,8 +2044,9 @@ if ~isnan(handles.Q)
             end
         end
     end
-
+    
     % Rauch-Tung-Striebel backwards filter
+    reversed_frames = flip(frames);
     for f = 2:length(reversed_frames)
         for i = 1:length(handles.Region)
             for j = 1:length(handles.Region(i).Fascicle)
@@ -2182,102 +2060,200 @@ if ~isnan(handles.Q)
     guidata(hObject, handles);
 end
 
-function[Q] = getQ(handles, dx)
-
-% Optical flow error is proportional to flow
-Q = handles.Q  * dx^2;
-
-function [K] = run_kalman_filter(k)
-% this assumes we already have the aposteriori state estimate (k.x_minus),
-% the measurement (k.y) and the process- and measurement noise covariances (k.R and k.Qvalue)
-
-% adjust kalman gain based on measurement variance
-K.K = k.P_minus / (k.P_minus + k.R);
-
-if isnan(K.K)
-    K.K = 0;
-end
-
-% check for weird gains
-if (K.K < 0) || (K.K > 1)
-    disp('warning: kalman gain outside 0-1 interval');
-    
-    K.K(K.K<0) = 0;
-    K.K(K.K>1) = 1;
-end
-
-% update state
-K.x_plus = k.x_minus + K.K * (k.y - k.x_minus);
-
-% update variance
-K.P_plus = (1-K.K) * k.P_minus;
-
-%State estimator smoothener
-function[handles] = state_smoothener(handles,frame_no,prev_frame_no)
+function[handles] = initialize_state_estimator(handles)
 
 i = 1;
 j = 1;
 
-Pcorr = handles.Region(i).Fascicle(j).fas_p{frame_no};
-Ppred = handles.Region(i).Fascicle(j).fas_p_minus{prev_frame_no};
-
-xcorr = [handles.Region(i).Fascicle(j).fas_x{frame_no}(2) handles.Region(i).Fascicle(j).alpha{frame_no}];
-xpred = handles.Region(i).Fascicle(j).X_minus{prev_frame_no};
-xsmooth = [handles.Region(i).Fascicle(j).fas_x{prev_frame_no}(2) handles.Region(i).Fascicle(j).alpha{prev_frame_no}];
-
-Psmooth = ones(1,2);
-
-for m = 1:2
-    A           = Pcorr(m)/Ppred(m);
-    A(isnan(A)) = 1;
-    
-    xsmooth(m)     = xcorr(m) + A*(xsmooth(m) - xpred(m));
-    Psmooth(m)     = Pcorr(m) + A*(Psmooth(m) - Ppred(m))*A;
-end
-
-fasx2_smooth = xsmooth(1);
-alpha_smooth = xsmooth(2);
-% fasx2_smooth = xcorrm(1);
-
-% recalc length and pennation
-% fit the current aponeurosis
-super_apo   = [handles.Region(i).sup_x{frame_no} handles.Region(i).sup_y{frame_no}];
-deep_apo    = [handles.Region(i).deep_x{frame_no} handles.Region(i).deep_y{frame_no}];
-super_coef  = polyfit(super_apo(:,1), super_apo(:,2), 1);
-deep_coef   = polyfit(deep_apo(:,1), deep_apo(:,2), 1);
-
-% get the vertical point from the estimated aponeurosis
-% fasy2_smooth = super_coef(2) + fasx2_smooth*super_coef(1);
 if handles.trackbck_chkBox.Value == 0
     frame0 = handles.start_frame;
+    m = 1;
 else
-    frame0 = handles.start_frame+handles.NumFrames-1;
+    frame0 = handles.start_frame + handles.NumFrames - 1;
+    m = -1;
 end
 
-fasy2 = handles.Region(i).Fascicle(j).fas_y{frame0}(2);
+Rs = handles.R(2:end) * .01;
+handles.Region(i).apo_p{frame0} = Rs';
 
-% get the deep attachment point from the superficial point and the angle
-fas_coef(1) = -tand(alpha_smooth);
-fas_coef(2) =  fasy2 - fas_coef(1) * fasx2_smooth;
+alpha0 = nan(1,handles.NS);
 
-fasx1_smooth = (fas_coef(2) - deep_coef(2)) / (deep_coef(1) - fas_coef(1));
-fasy1_smooth = deep_coef(2) + fasx1_smooth*deep_coef(1);
+for k = 1:handles.NS % number of starting frames
+    alpha0(k) = atan2d(-diff(handles.Region(i).Fascicle(j).fas_y{frame0+m*k}), diff(handles.Region(i).Fascicle(j).fas_x{frame0+m*k}));
+end
 
-fasy2_smooth = fasy2;
+handles.Region(i).Fascicle(j).X_plus{frame0} = [handles.Region(i).Fascicle(j).fas_x{frame0}(2) mean(alpha0)];    
+handles.Region(i).Fascicle(j).fas_p{frame0} = [0 var(alpha0)];
 
-fasx2_smooth_end = (fas_coef(2) - super_coef(2)) / (super_coef(1) - fas_coef(1));
-fasy2_smooth_end = super_coef(2) + fasx2_smooth_end*super_coef(1);
+% if manual is available for first frame, overrule
+if isfield(handles.Region(i).Fascicle(j), 'fas_x_manual')
+    if ~isempty(handles.Region(i).Fascicle(j).fas_x_manual)
+        if ~isempty(handles.Region(i).Fascicle(j).fas_x_manual{frame0})
+            handles.Region(i).Fascicle(j).X_plus{frame0} = [handles.Region(i).Fascicle(j).fas_x_manual{frame0}(2) handles.Region(i).fas_ang_manual(frame0)];
+            handles.Region(i).Fascicle(j).fas_p{frame0} = [0 0];
+        end
+    end
+end
 
-handles.Region(i).Fascicle(j).fas_x{frame_no}   = [fasx1_smooth; fasx2_smooth];
-handles.Region(i).Fascicle(j).fas_y{frame_no}   = [fasy1_smooth; fasy2_smooth];
-handles.Region(i).Fascicle(j).fas_x_end{frame_no}   = [fasx1_smooth; fasx2_smooth_end];
-handles.Region(i).Fascicle(j).fas_y_end{frame_no}   = [fasy1_smooth; fasy2_smooth_end];
-handles.Region(i).Fascicle(j).alpha{frame_no}       = alpha_smooth;
-handles.Region(i).Fascicle(j).fas_p{frame_no}       = Psmooth;
-handles.Region(i).Fascicle(j).A{frame_no} = A;
+% a priori is the same as a positeriori
+handles.Region(i).Fascicle(j).fas_p_minus{frame0} = handles.Region(i).Fascicle(j).fas_p{frame0};
+handles.Region(i).Fascicle(j).X_minus{frame0} = handles.Region(i).Fascicle(j).X_plus{frame0};
 
-% calculate the length and pennation for the current frame
-handles = calc_fascicle_length_and_pennation(handles,frame_no);
+handles = update_Fascicle(handles,frame0);
+
+
+function[handles] = state_estimator(handles,frame_no,prev_frame_no)
+
+i = 1; 
+j = 1;
+
+% Apply warp
+fas_prev = [handles.Region(i).Fascicle(j).fas_x{prev_frame_no} handles.Region(i).Fascicle(j).fas_y{prev_frame_no}];
+alpha_prev = handles.Region(i).Fascicle(j).alpha{prev_frame_no};
+
+w = handles.Region(i).warp(:,:,prev_frame_no);
+fas_new = transformPointsForward(w, fas_prev);
+
+% Estimate the change in fascicle angle from the change in points
+dalpha = abs(atan2d(diff(fas_new(:,2)), diff(fas_new(:,1)))) - abs(atan2d(diff(fas_prev(:,2)), diff(fas_prev(:,1))));
+alpha_new = alpha_prev + dalpha;
+
+% A priori state estimate
+x_minus = [fas_new(2,1) alpha_new];
+
+% State estimation superficial aponeurosis attachment
+% previous estimate covariance
+P_prev = handles.Region(i).Fascicle(j).fas_p{prev_frame_no};
+
+% get the process noise and measurement noise covariance
+dx = sqrt((fas_new(2,1)-fas_prev(2,1)).^2 + (fas_new(2,2)-fas_prev(2,2)).^2);
+s.Q = getQ(handles, dx);
+R(1) = handles.X;
+
+% a priori estimate from optical flow
+s.x_minus = x_minus(1);
+
+% 'measurement', here is the first value
+y(1) = handles.Region(i).Fascicle(j).fas_x{handles.start_frame}(2);
+
+% if there is a manual estimate, add a second measurement
+if isfield(handles.Region(i).Fascicle(j), 'fas_x_manual')
+    if length(handles.Region(i).Fascicle(j).fas_x_manual) >= frame_no
+        if ~isempty(handles.Region(i).Fascicle(j).fas_x_manual{frame_no})
+            y(2) = handles.Region(i).Fascicle(j).fas_x_manual{frame_no}(2);
+            R(2) = handles.R_manual;
+        end
+    end
+end
+
+% previous state covariance
+s.P_prev = P_prev(1);
+
+% a posteriori variance estimate
+s.P_minus = s.P_prev + s.Q;
+
+% run kalman filter
+for ii = 1:length(y)
+    
+    if ii == 2
+        % update
+        s.x_minus = S.x_plus;
+        s.P_minus = S.P_plus;
+    end
+    
+    s.y = y(ii);
+    s.R = R(ii);
+    
+    S = run_kalman_filter(s);   
+end
+
+% ascribe
+fasx2_plus = S.x_plus;
+fasx2_minus = s.x_minus;
+supP_plus = S.P_plus;
+supP_minus = s.P_minus;
+
+if isinf(handles.Q)
+    fasx2_plus = s.y;
+    supP_plus = s.R;
+elseif isinf(handles.X)
+    fasx2_plus = s.x_minus;
+    supP_plus = s.Q;
+end
+
+% Fascicle angle estimate
+% get the process noise and measurement noise covariance
+dx = abs(dalpha);
+dx(dx<0.005) = 0;
+f.Q = getQ(handles, dx);
+R(1) = handles.R(1);
+
+% apriori estimate from optical flow
+f.x_minus = x_minus(2);
+
+% measurement from Hough transform
+y(1) = handles.geofeatures(frame_no).alpha;
+
+% if there is a manual estimate, add a second measurement
+if isfield(handles.Region(i).Fascicle(j), 'fas_x_manual')
+    if length(handles.Region(i).Fascicle(j).fas_x_manual) >= frame_no
+        if ~isempty(handles.Region(i).Fascicle(j).fas_x_manual{frame_no})
+            y(2) = handles.Region(i).fas_ang_manual(frame_no);
+            R(2) = handles.R_manual / (pi*handles.Region(i).fas_length_manual(frame_no)*handles.vidHeight/handles.ID) * 180;
+        end
+    end
+end
+
+% previous state covariance
+f.P_prev = P_prev(2);
+
+% a posteriori variance estimate
+f.P_minus = f.P_prev + f.Q;
+
+% run kalman filter
+for ii = 1:length(y)
+    
+    if ii == 2
+        % update
+        f.x_minus = F.x_plus;
+        f.P_minus = F.P_plus;
+    end
+    
+    f.y = y(ii);
+    f.R = R(ii);
+    
+    F = run_kalman_filter(f);
+    
+end
+
+% ascribe
+alpha_minus = f.x_minus;
+alpha_plus = F.x_plus;
+Kgain = F.K;
+fasP_plus = F.P_plus;
+fasP_minus = f.P_minus;
+
+if isinf(handles.Q)
+    alpha_plus = f.y;
+    Kgain = 1;
+    fasP_plus = f.R;
+end
+
+% save things
+% state estimate
+handles.Region(i).Fascicle(j).X_plus{frame_no}  = [fasx2_plus alpha_plus];
+handles.Region(i).Fascicle(j).X_minus{frame_no} = [fasx2_minus alpha_minus];
+
+% state covariance
+handles.Region(i).Fascicle(j).fas_p{frame_no} = [supP_plus fasP_plus];
+handles.Region(i).Fascicle(j).fas_p_minus{frame_no} = [supP_minus fasP_minus];
+
+% kalman xshiftcor for fascicle
+handles.Region(i).Fascicle(j).K(frame_no) = Kgain;
+
+% update fascicle
+handles = update_Fascicle(handles,frame_no);
+
 
 
 function[handles] = apo_state_estimator(handles,frame_no,prev_frame_no)
@@ -2285,7 +2261,7 @@ function[handles] = apo_state_estimator(handles,frame_no,prev_frame_no)
 i = 1;
 n = handles.vidWidth;
 
-%% Apply warp
+% Apply warp
 super_prev = [handles.Region(i).sup_x{prev_frame_no} handles.Region(i).sup_y{prev_frame_no}];
 deep_prev = [handles.Region(i).deep_x{prev_frame_no} handles.Region(i).deep_y{prev_frame_no}];
 
@@ -2314,13 +2290,6 @@ if isfield(handles.Region(i), 'sup_x_manual')
 end
 
 Rs = handles.R(2:end) * .01;
-if handles.trackbck_chkBox.Value == 0
-    frame0 = handles.start_frame;
-else
-    frame0 = handles.NumFrames + handles.start_frame-1;
-end
-
-handles.Region(i).apo_p{frame0} = Rs';
 
 % loop over points (4)
 for kk = 1:numel(apo_new_y)
@@ -2381,6 +2350,7 @@ for kk = 1:numel(apo_new_y)
     
 end
 
+% Save things
 handles.Region(i).apo_p{frame_no} = P_plus;
 handles.Region(i).apo_gain{frame_no} = apo_gain';
 handles.Region(i).sup_x{frame_no} = [1 n]';
@@ -2388,201 +2358,103 @@ handles.Region(i).sup_y{frame_no} = apo_plus(1:2);
 handles.Region(i).deep_x{frame_no} = [1 n]';
 handles.Region(i).deep_y{frame_no} = apo_plus(3:4);
 
-function[handles] = state_estimator(handles,frame_no,prev_frame_no)
 
-i = 1; j = 1;
+%State estimator smoothener
+function[handles] = state_smoothener(handles,frame_no,prev_frame_no)
 
-% if the second frame, we need to calculate the first frame
-if ((frame_no == handles.start_frame + 1) && handles.trackbck_chkBox.Value == 0) || (frame_no == (handles.start_frame + handles.NumFrames -2) && handles.trackbck_chkBox.Value == 1)
+i = 1;
+j = 1;
+
+Pcorr = handles.Region(i).Fascicle(j).fas_p{frame_no};
+Ppred = handles.Region(i).Fascicle(j).fas_p_minus{prev_frame_no};
+Psmooth = handles.Region(i).Fascicle(j).fas_p{prev_frame_no};
+
+xcorr = handles.Region(i).Fascicle(j).X_plus{frame_no};
+xpred = handles.Region(i).Fascicle(j).X_minus{prev_frame_no};
+xsmooth = handles.Region(i).Fascicle(j).X_plus{prev_frame_no};
+
+for m = 1:2
+    A           = Pcorr(m)/Ppred(m);
+    A(isnan(A)) = 1;
     
-    if handles.trackbck_chkBox.Value == 0
-        frame0 = handles.start_frame;
-        m = 1;
-    else
-        frame0 = handles.start_frame + handles.NumFrames - 1;
-        m = -1;
-    end
-    
-    alpha0 = nan(1,handles.NS);
-    
-    for k = 1:handles.NS % number of starting frames
-        alpha0(k) = atan2d(-diff(handles.Region(i).Fascicle(j).fas_y_original{frame0+m*k}), diff(handles.Region(i).Fascicle(j).fas_x_original{frame0+m*k}));
-    end
-    
-    if isempty(handles.Region.Fascicle.fas_x_original{frame0})
-        handles.Region(i).Fascicle(j).X_plus{frame0} = [handles.Region(i).Fascicle(j).fas_x{frame0}(2) mean(alpha0)];
-    else
-        handles.Region(i).Fascicle(j).X_plus{frame0} = [handles.Region(i).Fascicle(j).fas_x_original{frame0}(2) mean(alpha0)];
-    end
-    
-    handles.Region(i).Fascicle(j).fas_p{frame0} = [0 var(alpha0)];
-    
-    % if manual is available for first frame, overrule
-    if isfield(handles.Region(i).Fascicle(j), 'fas_x_manual')
-        if ~isempty(handles.Region(i).Fascicle(j).fas_x_manual)
-            if ~isempty(handles.Region(i).Fascicle(j).fas_x_manual{frame0})
-                handles.Region(i).Fascicle(j).X_plus{frame0} = [handles.Region(i).Fascicle(j).fas_x_manual{frame0}(2) handles.Region(i).fas_ang_manual(frame0)];
-                handles.Region(i).Fascicle(j).fas_p{frame0} = [0 0];
-            end
-        end
-    end
-    
-    % a priori is the same as a positeriori
-    handles.Region(i).Fascicle(j).fas_p_minus{frame0} = handles.Region(i).Fascicle(j).fas_p{frame0};
-    handles.Region(i).Fascicle(j).X_minus{frame0} = handles.Region(i).Fascicle(j).X_plus{frame0};
-    
-    handles = update_Fascicle(handles,frame0);
-    
+    xsmooth(m)     = xcorr(m) + A*(xsmooth(m) - xpred(m));
+    Psmooth(m)     = Pcorr(m) + A*(Psmooth(m) - Ppred(m))*A;
 end
 
-%% Apply warp
-fas_prev = [handles.Region(i).Fascicle(j).fas_x{prev_frame_no} handles.Region(i).Fascicle(j).fas_y{prev_frame_no}];
-alpha_prev = handles.Region(i).Fascicle(j).alpha{prev_frame_no};
-
-w = handles.Region(i).warp(:,:,prev_frame_no);
-fas_new = transformPointsForward(w, fas_prev);
-
-% Estimate the change in fascicle angle from the change in points
-dalpha = abs(atan2d(diff(fas_new(:,2)), diff(fas_new(:,1)))) - abs(atan2d(diff(fas_prev(:,2)), diff(fas_prev(:,1))));
-alpha_new = alpha_prev + dalpha;
-
-% A priori state estimate
-x_minus = [fas_new(2,1) alpha_new];
-
-%% State estimation superficial aponeurosis attachment
-% previous estimate covariance
-P_prev = handles.Region(i).Fascicle(j).fas_p{prev_frame_no};
-
-% get the process noise and measurement noise covariance
-dx = sqrt((fas_new(2,1)-fas_prev(2,1)).^2 + (fas_new(2,2)-fas_prev(2,2)).^2);
-s.Q = getQ(handles, dx);
-R(1) = handles.X;
-
-% a priori estimate from optical flow
-s.x_minus = x_minus(1);
-
-% 'measurement', here is the first value
-y(1) = handles.Region(i).Fascicle(j).fas_x{handles.start_frame}(2);
-
-% if there is a manual estimate, add a second measurement
-if isfield(handles.Region(i).Fascicle(j), 'fas_x_manual')
-    if length(handles.Region(i).Fascicle(j).fas_x_manual) >= frame_no
-        if ~isempty(handles.Region(i).Fascicle(j).fas_x_manual{frame_no})
-            y(2) = handles.Region(i).Fascicle(j).fas_x_manual{frame_no}(2);
-            R(2) = handles.R_manual;
-        end
-    end
-end
-
-% previous state covariance
-s.P_prev = P_prev(1);
-
-% a posteriori variance estimate
-s.P_minus = s.P_prev + s.Q;
-
-% run kalman filter
-for ii = 1:length(y)
-    
-    if ii == 2
-        % update
-        s.x_minus = S.x_plus;
-        s.P_minus = S.P_plus;
-    end
-    
-    s.y = y(ii);
-    s.R = R(ii);
-    
-    S = run_kalman_filter(s);
-    
-end
-
-% ascribe
-fasx2_plus = S.x_plus;
-fasx2_minus = s.x_minus;
-supP_plus = S.P_plus;
-supP_minus = s.P_minus;
-
-if isinf(handles.Q)
-    fasx2_plus = s.y;
-    supP_plus = s.R;
-elseif isinf(handles.X)
-    fasx2_plus = s.x_minus;
-    supP_plus = s.Q;
-end
-
-%% Fascicle angle estimate
-% get the process noise and measurement noise covariance
-dx = abs(dalpha);
-dx(dx<0.005) = 0;
-f.Q = getQ(handles, dx);
-R(1) = handles.R(1);
-
-% apriori estimate from optical flow
-f.x_minus = x_minus(2);
-
-% measurement from Hough transform
-y(1) = handles.geofeatures(frame_no).alpha;
-
-% if there is a manual estimate, add a second measurement
-if isfield(handles.Region(i).Fascicle(j), 'fas_x_manual')
-    if length(handles.Region(i).Fascicle(j).fas_x_manual) >= frame_no
-        if ~isempty(handles.Region(i).Fascicle(j).fas_x_manual{frame_no})
-            y(2) = handles.Region(i).fas_ang_manual(frame_no);
-            R(2) = handles.R_manual / (pi*handles.Region(i).fas_length_manual(frame_no)*handles.vidHeight/handles.ID) * 180;
-        end
-    end
-end
-
-% previous state covariance
-f.P_prev = P_prev(2);
-
-% a posteriori variance estimate
-f.P_minus = f.P_prev + f.Q;
-
-% run kalman filter
-for ii = 1:length(y)
-    
-    if ii == 2
-        % update
-        f.x_minus = F.x_plus;
-        f.P_minus = F.P_plus;
-    end
-    
-    f.y = y(ii);
-    f.R = R(ii);
-    
-    F = run_kalman_filter(f);
-    
-end
-
-% ascribe
-alpha_minus = f.x_minus;
-alpha_plus = F.x_plus;
-Kgain = F.K;
-fasP_plus = F.P_plus;
-fasP_minus = f.P_minus;
-
-if isinf(handles.Q)
-    alpha_plus = f.y;
-    Kgain = 1;
-    fasP_plus = f.R;
-end
-
-
-%%
-% state estimate
-handles.Region(i).Fascicle(j).X_plus{frame_no}  = [fasx2_plus alpha_plus];
-handles.Region(i).Fascicle(j).X_minus{frame_no} = [fasx2_minus alpha_minus];
-
-% state covariance
-handles.Region(i).Fascicle(j).fas_p{frame_no} = [supP_plus fasP_plus];
-handles.Region(i).Fascicle(j).fas_p_minus{frame_no} = [supP_minus fasP_minus];
-
-% kalman xshiftcor for fascicle
-handles.Region(i).Fascicle(j).K(frame_no) = Kgain;
+% overwrite previous estimates
+handles.Region(i).Fascicle(j).X_plus{frame_no} = xsmooth;
+handles.Region(i).Fascicle(j).fas_p{frame_no} = Psmooth;
+handles.Region(i).Fascicle(j).A{frame_no} = A;
 
 % update fascicle
 handles = update_Fascicle(handles,frame_no);
+
+% calculate the length and pennation for the current frame
+handles = calc_fascicle_length_and_pennation(handles,frame_no);
+
+
+function [K] = run_kalman_filter(k)
+% this assumes we already have the aposteriori state estimate (k.x_minus),
+% the measurement (k.y) and the process- and measurement noise covariances (k.R and k.Qvalue)
+
+% adjust kalman gain based on measurement variance
+K.K = k.P_minus / (k.P_minus + k.R);
+
+if isnan(K.K)
+    K.K = 0;
+end
+
+% check for weird gains
+if (K.K < 0) || (K.K > 1)
+    disp('warning: kalman gain outside 0-1 interval');
+    
+    K.K(K.K<0) = 0;
+    K.K(K.K>1) = 1;
+end
+
+% update state
+K.x_plus = k.x_minus + K.K * (k.y - k.x_minus);
+
+% update variance
+K.P_plus = (1-K.K) * k.P_minus;
+
+function[handles] = estimate_variance(hObject, eventdata, handles)
+
+geofeatures = handles.geofeatures;
+x = nan(handles.NumFrames+handles.start_frame-1,5);
+
+for f = handles.start_frame:handles.NumFrames+handles.start_frame-1
+    x(f,1) = geofeatures(f).alpha;
+    x(f,2) = geofeatures(f).super_pos(1);
+    x(f,3) = geofeatures(f).super_pos(2);
+    x(f,4) = geofeatures(f).deep_pos(1);
+    x(f,5) = geofeatures(f).deep_pos(1);
+end
+
+Wn = 1.5*handles.fc_lpf / (.5 * handles.FrameRate);
+Wn(Wn>=1) = 1-1e-6;
+Wn(Wn<=0) = 1e-6;
+[b,a] = butter(2, Wn, 'high');
+
+xcya = isnan(x(:,1));
+x(xcya,:) = [];
+
+y = nan(size(x));
+if size(x,1) > 6
+    for i = 1:size(x,2)
+        y(:,i) = filtfilt(b,a,x(:,i));
+    end
+    
+else
+    y = x;
+end
+
+handles.R = var(y);
+
+function[Q] = getQ(handles, dx)
+
+% Optical flow error is proportional to flow
+Q = handles.Q  * dx^2;
 
 function[handles] = update_Fascicle(handles,frame_no)
 % gets fascicle tracking estimates from the state and tracked aponeuroses
@@ -2678,15 +2550,16 @@ function [handles] = Auto_Detect_Callback(hObject, eventdata, handles)
 % eventdata  reserved - to be defined in a future version of MATLAB
 % handles    structure with handles and user data (see GUIDATA)
 
-
     % initialize
     N = handles.NumFrames + handles.start_frame - 1;
-    handles.Region(1).fas_length    = nan(N,1);
-    handles.Region(1).fas_pen       = nan(N,1);
-    handles.Region(1).fas_length_manual    = nan(N,1);
-    handles.Region(1).fas_pen_manual       = nan(N,1);
-    
-    w = handles.vidWidth;
+    w = handles.vidWidth;    
+    n = handles.vidWidth;
+    i = 1;
+
+    handles.Region(i).fas_length            = nan(N,1);
+    handles.Region(i).fas_pen               = nan(N,1);
+    handles.Region(i).fas_length_manual     = nan(N,1);
+    handles.Region(i).fas_pen_manual        = nan(N,1);
     
     if isfield(handles, 'S')
         if ~isvalid(handles.S)
@@ -2713,9 +2586,6 @@ function [handles] = Auto_Detect_Callback(hObject, eventdata, handles)
     set(handles.S, 'EdgeAlpha',0,'FaceAlpha',0.1,'InteractionsAllowed','none')
     set(handles.D, 'EdgeAlpha',0,'FaceAlpha',0.1,'InteractionsAllowed','none')
     
-    % max range
-    % parms.fas.range = 90 - [-90 89];
-    
     % find the first frame
     frame_no = handles.start_frame + round(get(handles.frame_slider,'Value')) - 1;
     
@@ -2736,10 +2606,6 @@ function [handles] = Auto_Detect_Callback(hObject, eventdata, handles)
     geofeatures.deep_coef(2) = geofeatures.deep_coef(2)       .* [handles.imresize_fac];
     geofeatures.fas_coef(2) = geofeatures.fas_coef(2)         .* [handles.imresize_fac];
     
-    n = handles.vidWidth;
-    % geofeatures.super_pos = polyval(geofeatures.super_coef, [1 n]);
-    % geofeatures.deep_pos = polyval(geofeatures.deep_coef, [1 n]);
-    
     % save geofeatures
     handles.geofeatures(frame_no) = geofeatures;
     
@@ -2748,7 +2614,6 @@ function [handles] = Auto_Detect_Callback(hObject, eventdata, handles)
     Super_intersect_y = polyval(geofeatures.super_coef, Super_intersect_x);
     Deep_intersect_y = polyval(geofeatures.deep_coef, Deep_intersect_x);
     
-    i = 1;
     handles.Region(i).sup_x{frame_no} = [1 n]';
     handles.Region(i).sup_y{frame_no} = polyval(geofeatures.super_coef, [1 n]');
     
@@ -2772,30 +2637,6 @@ function [handles] = Auto_Detect_Callback(hObject, eventdata, handles)
     show_image(hObject,handles);
     show_data(hObject, handles)
 
-
-function [handles] = extract_estimates(hObject, eventdata, handles)
-
-i = 1;
-j = 1;
-frame_no = handles.start_frame + round(get(handles.frame_slider,'Value')) - 1;
-d = round(size(handles.ImStack,2)/2);
-
-handles.Region(i).sup_x_manual{frame_no} = handles.s.Position(:,1)-d;
-handles.Region(i).sup_y_manual{frame_no} = handles.s.Position(:,2);
-
-handles.Region(i).deep_x_manual{frame_no} = handles.d.Position(:,1)-d;
-handles.Region(i).deep_y_manual{frame_no} = handles.d.Position(:,2);
-
-handles.Region(i).ROIx_manual{frame_no} = [handles.s.Position(1,1); handles.d.Position([1 2],1); handles.s.Position([2 1],1)]-d;
-handles.Region(i).ROIy_manual{frame_no} = [handles.s.Position(1,2); handles.d.Position([1 2],2); handles.s.Position([2 1],2)];
-
-handles.Region(i).Fascicle(j).fas_x_manual{frame_no} = handles.h.Position(:,1)-d;
-handles.Region(i).Fascicle(j).fas_y_manual{frame_no} = handles.h.Position(:,2);
-
-handles = calc_fascicle_length_and_pennation(handles,frame_no);
-
-% Update handles structure
-guidata(hObject, handles);
 
 % --- Executes on button press in do_parfor.
 function do_parfor_Callback(hObject, eventdata, handles)
@@ -3123,9 +2964,16 @@ function freq_lpf_Callback(hObject, eventdata, handles)
 %        str2double(get(hObject,'String')) returns contents of freq_lpf as a double
 
 handles.fc_lpf = str2double(get(hObject,'String'));
+i = 1;
+j = 1;
+frame_no = handles.start_frame;
+handles.Region(i).Fascicle(j).fas_x{frame_no} = handles.Region(i).Fascicle(j).fas_x_original{frame_no};
+handles.Region(i).Fascicle(j).fas_y{frame_no} = handles.Region(i).Fascicle(j).fas_y_original{frame_no};
 
 % Update handles structure
 guidata(hObject, handles);
+
+% handles.
 
 % If we have estimates, run state estimation
 if isfield(handles, 'Region')
@@ -3158,6 +3006,13 @@ function X_value_Callback(hObject, eventdata, handles)
 %        str2double(get(hObject,'String')) returns contents of X_value as a double
 
 handles.X = str2double(get(hObject,'String'));
+
+i = 1;
+j = 1;
+frame_no = handles.start_frame;
+handles.Region(i).Fascicle(j).fas_x{frame_no} = handles.Region(i).Fascicle(j).fas_x_original{frame_no};
+handles.Region(i).Fascicle(j).fas_y{frame_no} = handles.Region(i).Fascicle(j).fas_y_original{frame_no};
+
 
 % If we have estimates, run state estimation
 if isfield(handles, 'Region')
@@ -3223,6 +3078,11 @@ function Qvalue_Callback(hObject, eventdata, handles)
 %        str2double(get(hObject,'String')) returns contents of Qvalue as a double
 
 handles.Q = abs(str2double(get(hObject,'String')));
+i = 1;
+j = 1;
+frame_no = handles.start_frame;
+handles.Region(i).Fascicle(j).fas_x{frame_no} = handles.Region(i).Fascicle(j).fas_x_original{frame_no};
+handles.Region(i).Fascicle(j).fas_y{frame_no} = handles.Region(i).Fascicle(j).fas_y_original{frame_no};
 
 % If we have estimates ALL frames, run state estimation otherwise just
 % update Q value
@@ -3261,6 +3121,12 @@ function Nstat_Callback(hObject, eventdata, handles)
 %        str2double(get(hObject,'String')) returns contents of Nstat as a double
 
 handles.NS = str2double(get(hObject,'String'));
+i = 1;
+j = 1;
+frame_no = handles.start_frame;
+handles.Region(i).Fascicle(j).fas_x{frame_no} = handles.Region(i).Fascicle(j).fas_x_original{frame_no};
+handles.Region(i).Fascicle(j).fas_y{frame_no} = handles.Region(i).Fascicle(j).fas_y_original{frame_no};
+
 
 if isfield(handles, 'Region')
     handles = do_state_estimation(hObject, eventdata, handles);
@@ -3293,6 +3159,13 @@ function manu_set_block_size_Callback(hObject, eventdata, handles)
 % eventdata  reserved - to be defined in a future version of MATLAB
 % handles    structure with handles and user data (see GUIDATA)
 tmp = set_block_size(handles.BlockSize);
+
+i = 1;
+j = 1;
+frame_no = handles.start_frame;
+handles.Region(i).Fascicle(j).fas_x{frame_no} = handles.Region(i).Fascicle(j).fas_x_original{frame_no};
+handles.Region(i).Fascicle(j).fas_y{frame_no} = handles.Region(i).Fascicle(j).fas_y_original{frame_no};
+
 
 if sum(tmp ~= handles.BlockSize) ~= 0 %if the Block changed, then check and run Opticflow
     
@@ -3383,6 +3256,12 @@ function SA_Callback(hObject, eventdata, handles)
 % hObject    handle to SA (see GCBO)
 % eventdata  reserved - to be defined in a future version of MATLAB
 % handles    structure with handles and user data (see GUIDATA)
+
+i = 1;
+j = 1;
+frame_no = handles.start_frame;
+handles.Region(i).Fascicle(j).fas_x{frame_no} = handles.Region(i).Fascicle(j).fas_x_original{frame_no};
+handles.Region(i).Fascicle(j).fas_y{frame_no} = handles.Region(i).Fascicle(j).fas_y_original{frame_no};
 
 Qlog = 10.^(-7:3);
 Qlin1 = (1:9) * 10^-3;
@@ -3527,79 +3406,103 @@ if isfield(handles,'s')
 end
 
 
-    i = 1;
-    j = 1;
-    
-    frame_no = handles.start_frame + round(get(handles.frame_slider,'Value')) - 1;
-    
-    if ~isfield(handles, 'Region')
-        handles = Auto_Detect_Callback(hObject, eventdata, handles);
+i = 1;
+j = 1;
+
+frame_no = handles.start_frame + round(get(handles.frame_slider,'Value')) - 1;
+
+if ~isfield(handles, 'Region')
+    handles = Auto_Detect_Callback(hObject, eventdata, handles);
+end
+
+% first time "Set manual" is pushed
+if ~isfield(handles, 'h') || ~isfield(handles, 'd') || ~isfield(handles, 's')
+    Supex = handles.Region(i).sup_x{frame_no};
+    Supey = handles.Region(i).sup_y{frame_no};
+    Deepx = handles.Region(i).deep_x{frame_no};
+    Deepy = handles.Region(i).deep_y{frame_no};
+    Fasx = handles.Region(i).Fascicle(j).fas_x{frame_no};
+    Fasy = handles.Region(i).Fascicle(j).fas_y{frame_no};
+
+    d = round(size(handles.ImStack,2)/2);
+    axes(handles.axes1)
+    handles.h = drawline('Position', [Fasx(1)+d Fasy(1); Fasx(2)+d Fasy(2)], 'color', 'red', 'linewidth',2,'StripeColor','w');
+    handles.s = drawline('Position', [Supex(1)+d Supey(1); Supex(2)+d Supey(2)], 'color', 'blue', 'linewidth',2,'StripeColor','w');
+    handles.d = drawline('Position', [Deepx(1)+d Deepy(1); Deepx(2)+d Deepy(2)], 'color', 'green', 'linewidth',2,'StripeColor','w');
+
+else  % second time "Set manual" is pushed
+
+    handles = extract_estimates(hObject, eventdata, handles);
+
+    % if the first or last frame or in TimTrack mode, accept manual tracking
+    if frame_no == handles.start_frame || frame_no == (handles.start_frame + handles.NumFrames-1) || handles.TimTrack_mode.Value
+        handles.Region(i).Fascicle(j).fas_x{frame_no} = handles.Region(i).Fascicle(j).fas_x_manual{frame_no};
+        handles.Region(i).Fascicle(j).fas_y{frame_no} = handles.Region(i).Fascicle(j).fas_y_manual{frame_no};
+
+        handles.Region(i).sup_x{frame_no} = handles.Region(i).sup_x_manual{frame_no};
+        handles.Region(i).sup_y{frame_no} = handles.Region(i).sup_y_manual{frame_no};
+
+        handles.Region(i).deep_x{frame_no} = handles.Region(i).deep_x_manual{frame_no};
+        handles.Region(i).deep_y{frame_no} = handles.Region(i).deep_y_manual{frame_no};
+
+%         handles.Region(i).Fascicle(j).fas_x_original{frame_no} = handles.Region(i).Fascicle(j).fas_x{frame_no};
+%         handles.Region(i).Fascicle(j).fas_y_original{frame_no} = handles.Region(i).Fascicle(j).fas_y{frame_no};
+
     end
-    
-    % first time "Set manual" is pushed
-    if ~isfield(handles, 'h') || ~isfield(handles, 'd') || ~isfield(handles, 's')
-        Supex = handles.Region(i).sup_x{frame_no};
-        Supey = handles.Region(i).sup_y{frame_no};
-        Deepx = handles.Region(i).deep_x{frame_no};
-        Deepy = handles.Region(i).deep_y{frame_no};
-        Fasx = handles.Region(i).Fascicle(j).fas_x{frame_no};
-        Fasy = handles.Region(i).Fascicle(j).fas_y{frame_no};
-        
-        d = round(size(handles.ImStack,2)/2);
-        axes(handles.axes1)
-        handles.h = drawline('Position', [Fasx(1)+d Fasy(1); Fasx(2)+d Fasy(2)], 'color', 'red', 'linewidth',2,'StripeColor','w');
-        handles.s = drawline('Position', [Supex(1)+d Supey(1); Supex(2)+d Supey(2)], 'color', 'blue', 'linewidth',2,'StripeColor','w');
-        handles.d = drawline('Position', [Deepx(1)+d Deepy(1); Deepx(2)+d Deepy(2)], 'color', 'green', 'linewidth',2,'StripeColor','w');
-        
-    else  % second time "Set manual" is pushed
-        
-        handles = extract_estimates(hObject, eventdata, handles);
-        
-        % if the first or last frame or in TimTrack mode, accept manual tracking
-        if frame_no == handles.start_frame || frame_no == (handles.start_frame + handles.NumFrames-1) || handles.TimTrack_mode.Value
-            handles.Region(i).Fascicle(j).fas_x{frame_no} = handles.Region(i).Fascicle(j).fas_x_manual{frame_no};
-            handles.Region(i).Fascicle(j).fas_y{frame_no} = handles.Region(i).Fascicle(j).fas_y_manual{frame_no};
-            
-            
-            handles.Region(i).sup_x{frame_no} = handles.Region(i).sup_x_manual{frame_no};
-            handles.Region(i).sup_y{frame_no} = handles.Region(i).sup_y_manual{frame_no};
-            
-            handles.Region(i).deep_x{frame_no} = handles.Region(i).deep_x_manual{frame_no};
-            handles.Region(i).deep_y{frame_no} = handles.Region(i).deep_y_manual{frame_no};
-            
-            handles.Region(i).Fascicle(j).fas_x_original{frame_no} = handles.Region(i).Fascicle(j).fas_x{frame_no};
-            handles.Region(i).Fascicle(j).fas_y_original{frame_no} = handles.Region(i).Fascicle(j).fas_y{frame_no};
-            
+
+    handles = calc_fascicle_length_and_pennation(handles,frame_no);
+
+    if ~handles.TimTrack_mode.Value
+        try
+            handles = do_state_estimation(hObject, eventdata, handles);
+        catch
+            disp('Estimation avaiable only with ROI Type "Hough - Local" or "Hough - global"')
         end
-        
-        handles = calc_fascicle_length_and_pennation(handles,frame_no);
-        
-        if ~handles.TimTrack_mode.Value
-            try
-                handles = do_state_estimation(hObject, eventdata, handles);
-            catch
-                disp('Estimation avaiable only with ROI Type "Hough - Local" or "Hough - global"')
-            end
-        else
-            [handles] = minimize_extrapolation(hObject, eventdata, handles);
-            handles.Region(i).Fascicle(j).fas_x_manual{frame_no} = handles.Region(i).Fascicle(j).fas_x{frame_no};
-            handles.Region(i).Fascicle(j).fas_y_manual{frame_no} = handles.Region(i).Fascicle(j).fas_y{frame_no};
-        end
-        
-        delete(handles.h)
-        delete(handles.d)
-        delete(handles.s)
-        
-        handles = rmfield(handles, 'h');
-        handles = rmfield(handles, 'd');
-        handles = rmfield(handles, 's');
+    else
+        [handles] = minimize_extrapolation(hObject, eventdata, handles);
+        handles.Region(i).Fascicle(j).fas_x_manual{frame_no} = handles.Region(i).Fascicle(j).fas_x{frame_no};
+        handles.Region(i).Fascicle(j).fas_y_manual{frame_no} = handles.Region(i).Fascicle(j).fas_y{frame_no};
     end
+
+    delete(handles.h)
+    delete(handles.d)
+    delete(handles.s)
+
+    handles = rmfield(handles, 'h');
+    handles = rmfield(handles, 'd');
+    handles = rmfield(handles, 's');
+end
+
+show_data(hObject, handles);
+show_image(hObject, handles);
+
+guidata(hObject, handles);
+
     
-    show_data(hObject, handles);
-    show_image(hObject, handles);
-    
-    guidata(hObject, handles);
-    
+function [handles] = extract_estimates(hObject, eventdata, handles)
+
+i = 1;
+j = 1;
+frame_no = handles.start_frame + round(get(handles.frame_slider,'Value')) - 1;
+d = round(size(handles.ImStack,2)/2);
+
+handles.Region(i).sup_x_manual{frame_no} = handles.s.Position(:,1)-d;
+handles.Region(i).sup_y_manual{frame_no} = handles.s.Position(:,2);
+
+handles.Region(i).deep_x_manual{frame_no} = handles.d.Position(:,1)-d;
+handles.Region(i).deep_y_manual{frame_no} = handles.d.Position(:,2);
+
+handles.Region(i).ROIx_manual{frame_no} = [handles.s.Position(1,1); handles.d.Position([1 2],1); handles.s.Position([2 1],1)]-d;
+handles.Region(i).ROIy_manual{frame_no} = [handles.s.Position(1,2); handles.d.Position([1 2],2); handles.s.Position([2 1],2)];
+
+handles.Region(i).Fascicle(j).fas_x_manual{frame_no} = handles.h.Position(:,1)-d;
+handles.Region(i).Fascicle(j).fas_y_manual{frame_no} = handles.h.Position(:,2);
+
+handles = calc_fascicle_length_and_pennation(handles,frame_no);
+
+% Update handles structure
+guidata(hObject, handles);
+
 
 function manual_variance_Callback(hObject, eventdata, handles)
 % hObject    handle to manual_variance (see GCBO)
@@ -3933,5 +3836,66 @@ for frame_no = 1:n
 end
 
 
+function [I_fmasked, I_amasked] = get_masked_image(im, f, handles)
 
+    % make a copy
+    I_fmasked = im;
+    I_amasked = im;
+    im1 = im;
+    
+    i = 1;
+    m = handles.vidHeight;
+
+    % if Hough local, get mask from Hough
+    if isfield(handles,'geofeatures') && strcmp(handles.ROItype, 'Hough - local')
+        M = zeros(size(im1,1), size(im1,2), handles.parms.fas.npeaks);
+
+        for j = 1:handles.parms.fas.npeaks
+            x1 = handles.geofeatures(f).x(j,1) * handles.imresize_fac;
+            y1 = handles.geofeatures(f).y(j,1) * handles.imresize_fac;
+
+            x2 = handles.geofeatures(f).x(j,2) * handles.imresize_fac;
+            y2 = handles.geofeatures(f).y(j,2) * handles.imresize_fac;
+
+            dy = 5; % pixels around fascicle line
+
+            ROIx = [x1 x1 x2 x2 x1];
+            ROIy = [y1-dy y1+dy y2+dy y2-dy y1-dy]';
+
+            if sum(isfinite(ROIx)) == length(ROIx) && sum(isfinite(ROIy)) == length(ROIy)
+                M(:,:,j) = poly2mask(ROIx,ROIy, size(im1,1), size(im1,2));
+            end
+        end
+
+        % mask
+        fmask = sum(M,3);
+        fmask(fmask>1) = 1;
+
+        I_fmasked(fmask~=1) = 0;
+    end
+
+    % if Hough-based ROI, get current ROI from Hough
+    if contains(handles.ROItype, 'Hough')
+
+        % get ROI
+        ROIy = handles.Region(i).ROIy{f};
+        ROIx = handles.Region(i).ROIx{f};
+        
+        % mask
+        fmask = poly2mask(ROIx, ROIy, size(im,1), size(im,2));
+        I_fmasked(fmask~=1) = 0;
+
+        s = handles.parms.apo.super.cut;
+        ROIys = [s(1) s(2) s(2) s(1) s(1)] * m;
+
+        d = handles.parms.apo.deep.cut;
+        ROIyd = [d(1) d(2) d(2) d(1) d(1)] * m;
+
+        dmask =  poly2mask(ROIx, ROIyd, size(im,1), size(im,2));
+        smask =  poly2mask(ROIx, ROIys, size(im,1), size(im,2));
+
+        amask = dmask + smask;
+        amask(amask > 1) = 1;
+        I_amasked(amask~=1) = 0;
+    end
 
