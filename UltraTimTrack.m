@@ -143,10 +143,6 @@ if isfield(handles,'Region')
     handles = rmfield(handles,'Region');
 end
 
-% if ~isempty(get(handles.keyframe_list,'String'))
-%     set(handles.keyframe_list,'String',[])
-% end
-
 if isfield(handles,'crop_rect')
     handles.crop_rect = [];
 end
@@ -400,12 +396,14 @@ end
 
 cd(handles.pname)
 
+handles = AutoCrop_Callback(hObject, eventdata, handles);
+
 % create region for aponeurosis detection
 % handles.S = images.roi.Rectangle(handles.axes1,'position', [1 handles.parms.apo.super.cut(1)*handles.vidHeight handles.vidWidth diff(handles.parms.apo.super.cut)*handles.vidHeight],'color','blue');
 % handles.D = images.roi.Rectangle(handles.axes1,'position', [1 handles.parms.apo.deep.cut(1)*handles.vidHeight handles.vidWidth diff(handles.parms.apo.deep.cut)*handles.vidHeight],'color','green');
 
 % update the image axes using show_image function (bottom)
-clear_fascicle_Callback(hObject, eventdata, handles);
+handles = clear_fascicle_Callback(hObject, eventdata, handles);
 
 handles.ImStackOr = handles.ImStack;
 if handles.flipimage.Value == 1%check based on flip tick box value
@@ -736,13 +734,21 @@ B = round([min(boundingBoxes(:, 1)), min(boundingBoxes(:, 2)), ...
     max(boundingBoxes(:, 1) + boundingBoxes(:, 3)) - min(boundingBoxes(:, 1)), ...
     max(boundingBoxes(:, 2) + boundingBoxes(:, 4)) - min(boundingBoxes(:, 2))]);
 
-handles.ImStack = Im(B(2):(B(2)+B(4)-1), B(1):(B(1)+B(3)-1),:);
+handles.B = B;
 
-handles.vidHeight = size(handles.ImStack,1);
-handles.vidWidth = size(handles.ImStack,2);
+if isfield(handles, 'Bi')
+    handles.Bi.Position = B;
+end
+
+% handles.ImStack = Im(B(2):(B(2)+B(4)-1), B(1):(B(1)+B(3)-1),:);
+% handles.vidHeight = size(handles.ImStack,1);
+% handles.vidWidth = size(handles.ImStack,2);
+
+handles.vidWidth = length(handles.B(1):(handles.B(1)+handles.B(3)-1));
+handles.vidHeight = length(handles.B(2):(handles.B(2)+handles.B(4)-1));
 
 % clear all tracking
-handles = menu_clear_tracking_Callback(hObject, eventdata, handles);
+% handles = menu_clear_tracking_Callback(hObject, eventdata, handles);
 
 % Update handles structure
 guidata(hObject, handles);
@@ -800,8 +806,9 @@ if isfield(handles,'ImStack')
     
     % set the image croppable area to the maximum area
     %handles.crop_rect = [1 1 handles.vidWidth handles.vidHeight];
-    handles.ImStack = handles.ImStackOr; %restore original image
+%     handles.ImStack = handles.ImStackOr; %restore original image
     % update the image axes using show_image function (bottom)
+    
     show_image(hObject,handles);
     
 end
@@ -1502,8 +1509,15 @@ if isfield(handles,'ImStack')
             % add padding
             currentImage = [ZeroPadL, handles.ImStack(:,:,frame_no), ZeroPadR];
             
-            fasx = handles.Region(i).Fascicle(j).fas_x{f};
-            fasy = handles.Region(i).Fascicle(j).fas_y{f};
+            % extract locations
+            fasx = handles.Region(i).Fascicle(j).fas_x{f} + handles.B(1) + d;
+            fasy = handles.Region(i).Fascicle(j).fas_y{f} + handles.B(2);
+            supx = handles.Region(i).sup_x{f} + handles.B(1) + d;
+            supy = handles.Region(i).sup_y{f} + handles.B(2);
+            deepx = handles.Region(i).deep_x{f} + handles.B(1) + d;
+            deepy = handles.Region(i).deep_y{f} + handles.B(2);
+            ROIx = handles.Region(i).ROIx{f} + handles.B(1) + d;
+            ROIy = handles.Region(i).ROIy{f} + handles.B(2);
             
             if isfield(handles.Region(i).Fascicle(j), 'fas_x_manual') && length(handles.Region(i).Fascicle(j).fas_x_manual) >= frame_no
                 if ~isempty(handles.Region(i).Fascicle(j).fas_x_manual{frame_no})
@@ -1521,40 +1535,41 @@ if isfield(handles,'ImStack')
             end
             
             % add fascicle
-            currentImage = insertShape(currentImage,'line',[fasx(1)+d, fasy(1), ...
-                fasx(2)+d,fasy(2)], 'LineWidth',5, 'Color','red');
-            
-            currentImage = insertMarker(currentImage,[fasx(1)+d, fasy(1);...
-                fasx(2)+d, fasy(2)], 'o', 'Color','red','size',5);
+            currentImage = insertShape(currentImage,'line',[fasx(1), fasy(1), fasx(2),fasy(2)], 'LineWidth',5, 'Color','red');
+            currentImage = insertMarker(currentImage,[fasx(1), fasy(1); fasx(2), fasy(2)], 'o', 'Color','red','size',5);
             
             
             % add aponeurosis
-            currentImage = insertShape(currentImage,'line',[handles.Region(i).sup_x{f}(1)+d, handles.Region(i).sup_y{f}(1), ...
-                handles.Region(i).sup_x{f}(2)+d,handles.Region(i).sup_y{f}(2)], 'LineWidth',5, 'Color','blue');
+            currentImage = insertShape(currentImage,'line',[supx(1), supy(1),supx(2),supy(2)], 'LineWidth',5, 'Color','blue');
+            currentImage = insertShape(currentImage,'line',[deepx(1), deepy(1),deepx(2),deepy(2)], 'LineWidth',5, 'Color','green');
             
-            currentImage = insertShape(currentImage,'line',[handles.Region(i).deep_x{f}(1)+d, handles.Region(i).deep_y{f}(1), ...
-                handles.Region(i).deep_x{f}(2)+d,handles.Region(i).deep_y{f}(2)], 'LineWidth',5, 'Color','green');
             
             if isfield(handles,'points')
                 if ~isempty(handles.points{f})
                     
-                    currentImage = insertMarker(currentImage,[handles.points{f}(:,1)+d, handles.points{f}(:,2)], '+', 'Color','red','size',2);
+                    ptsx = handles.points{f}(:,1) + handles.B(1) + d; 
+                    ptsy = handles.points{f}(:,2) + handles.B(2); 
+                    
+                    currentImage = insertMarker(currentImage,[ptsx, ptsy], '+', 'Color','red','size',2);
                     currentImage = insertText(currentImage, [10 10], ['Number of feature points: ' ,num2str(length(handles.points{f}))],'BoxColor','white');
                 end
             end
             
             % add ROI
-            currentImage = insertShape(currentImage,'Polygon',[handles.Region(i).ROIx{f}(1)+d, handles.Region(i).ROIy{f}(1), ...
-                handles.Region(i).ROIx{f}(2)+d, handles.Region(i).ROIy{f}(2),handles.Region(i).ROIx{f}(3)+d, handles.Region(i).ROIy{f}(3),...
-                handles.Region(i).ROIx{f}(4)+d, handles.Region(i).ROIy{f}(4),handles.Region(i).ROIx{f}(5)+d, handles.Region(i).ROIy{f}(5)],'LineWidth',1, 'Color','red');
+            currentImage = insertShape(currentImage,'Polygon',[ROIx(1), ROIy(1), ROIx(2), ROIy(2),ROIx(3), ROIy(3),...
+                ROIx(4), ROIy(4), ROIx(5), ROIy(5)],'LineWidth',1, 'Color','red');
             
             % save
             ImTrack = currentImage;
             
-            %            show region
+            % show region
             if isvalid(handles.S)
-                set(handles.S, 'Position', [1 handles.parms.apo.super.cut(1)*handles.vidHeight floor(handles.vidWidth/2) diff(handles.parms.apo.super.cut)*handles.vidHeight])
-                set(handles.D, 'Position', [1 handles.parms.apo.deep.cut(1)*handles.vidHeight floor(handles.vidWidth/2) diff(handles.parms.apo.deep.cut)*handles.vidHeight])
+                set(handles.S, 'Position', [1 handles.parms.apo.super.cut(1)*handles.vidHeight floor(handles.vidWidth/2) diff(handles.parms.apo.super.cut)*handles.vidHeight] + [handles.B(1) handles.B(2) 0 0])
+                set(handles.D, 'Position', [1 handles.parms.apo.deep.cut(1)*handles.vidHeight floor(handles.vidWidth/2) diff(handles.parms.apo.deep.cut)*handles.vidHeight] + [handles.B(1) handles.B(2) 0 0])
+            end
+            
+            if isvalid(handles.Bi)
+                set(handles.Bi, 'Position', handles.B + [d 0 0 0]);
             end
         end
     end
@@ -1582,9 +1597,30 @@ if isfield(handles,'ImStack')
     end
     
     % if we're showing original, show the aponeurosis regions
-    if ~isfield(handles,'ImTrack') && (~isfield(handles, 'S') || ~isvalid(handles.S))
-        handles.S = images.roi.Rectangle(handles.axes1,'position', [1 handles.parms.apo.super.cut(1)*handles.vidHeight handles.vidWidth diff(handles.parms.apo.super.cut)*handles.vidHeight],'color','blue');
-        handles.D = images.roi.Rectangle(handles.axes1,'position', [1 handles.parms.apo.deep.cut(1)*handles.vidHeight handles.vidWidth diff(handles.parms.apo.deep.cut)*handles.vidHeight],'color','green');
+    if ~isfield(handles,'ImTrack')
+        if ~isfield(handles,'Bi') || ~isvalid(handles.Bi)
+            handles.Bi = images.roi.Rectangle(handles.axes1,'position', handles.B,'color','yellow','FaceAlpha',0,'FaceSelectable',0,'Linewidth',1,'StripeColor','white');
+        end
+        
+        if (~isfield(handles, 'S') || ~isvalid(handles.S))
+            handles.S = images.roi.Rectangle(handles.axes1,'position', [1 handles.parms.apo.super.cut(1)*handles.vidHeight handles.vidWidth diff(handles.parms.apo.super.cut)*handles.vidHeight] + [handles.Bi.Position(1) handles.Bi.Position(2) 0 0],'color','blue','FaceSelectable',0);
+            handles.D = images.roi.Rectangle(handles.axes1,'position', [1 handles.parms.apo.deep.cut(1)*handles.vidHeight handles.vidWidth diff(handles.parms.apo.deep.cut)*handles.vidHeight] + [handles.Bi.Position(1) handles.Bi.Position(2) 0 0],'color','green','FaceSelectable',0);
+        else
+            set(handles.S, 'Position', [handles.Bi.Position(1) handles.parms.apo.super.cut(1)*handles.Bi.Position(4) + handles.Bi.Position(2) handles.Bi.Position(3) diff(handles.parms.apo.super.cut)*handles.Bi.Position(4)])
+            set(handles.D, 'Position', [handles.Bi.Position(1) handles.parms.apo.deep.cut(1)*handles.Bi.Position(4) + handles.Bi.Position(2) handles.Bi.Position(3) diff(handles.parms.apo.deep.cut)*handles.Bi.Position(4)])
+        end
+    end
+    
+    if handles.flipimage.Value
+        title('\leftarrow Superficial attachment');
+    else
+        title('Superficial attachment \rightarrow');
+    end
+    
+    if handles.flipimage.Value
+        set(handles.axes1,'xdir','reverse')
+    else
+        set(handles.axes1,'xdir','normal')
     end
     
     % remove previous vertical lines
@@ -1675,7 +1711,8 @@ parms.extrapolation = 1;
 n = handles.vidWidth;
 
 if isfield(handles,'ImStack')
-    im2 = imresize(handles.ImStack, 1/handles.imresize_fac);
+    Im = handles.ImStack(handles.B(2):(handles.B(2)+handles.B(4)-1), handles.B(1):(handles.B(1)+handles.B(3)-1),:);
+    im2 = imresize(Im, 1/handles.imresize_fac);
     
     % call once to get the correct fascicle region
     auto_ultrasound(im2(:,:,handles.start_frame), parms);
@@ -1818,7 +1855,8 @@ for i = 1:length(handles.Region)
         fprev = f - handles.direction;
 
         % extract image
-        im = handles.ImStack(:,:,f);
+        im = handles.ImStack(handles.B(2):(handles.B(2)+handles.B(4)-1), handles.B(1):(handles.B(1)+handles.B(3)-1),f);
+%         im = handles.ImStack(:,:,f);
         
         % get masked image
         [I_fmasked, I_amasked] = get_masked_image(im, f, handles);
@@ -2522,9 +2560,14 @@ function [handles] = Auto_Detect_Callback(hObject, eventdata, handles)
 % eventdata  reserved - to be defined in a future version of MATLAB
 % handles    structure with handles and user data (see GUIDATA)
 
+    handles.B = handles.Bi.Position;  
+    set(handles.Bi, 'InteractionsAllowed','none')
+    
+    handles.vidWidth = length(handles.B(1):(handles.B(1)+handles.B(3)-1));
+    handles.vidHeight = length(handles.B(2):(handles.B(2)+handles.B(4)-1));  
+    
     % initialize
     N = handles.NumFrames + handles.start_frame - 1;
-    w = handles.vidWidth;    
     n = handles.vidWidth;
     i = 1;
 
@@ -2535,34 +2578,36 @@ function [handles] = Auto_Detect_Callback(hObject, eventdata, handles)
     
     if isfield(handles, 'S')
         if ~isvalid(handles.S)
-            handles.S = images.roi.Rectangle(handles.axes1,'position', [1 handles.parms.apo.super.cut(1)*handles.vidHeight w diff(handles.parms.apo.super.cut)*handles.vidHeight],'color','blue');
+            handles.S = images.roi.Rectangle(handles.axes1,'position', [1 handles.parms.apo.super.cut(1)*handles.vidHeight n diff(handles.parms.apo.super.cut)*handles.vidHeight] + [handles.B(1) handles.B(2) 0 0],'color','blue');
         end
     else
-            handles.S = images.roi.Rectangle(handles.axes1,'position', [1 handles.parms.apo.super.cut(1)*handles.vidHeight w diff(handles.parms.apo.super.cut)*handles.vidHeight],'color','blue');
+            handles.S = images.roi.Rectangle(handles.axes1,'position', [1 handles.parms.apo.super.cut(1)*handles.vidHeight n diff(handles.parms.apo.super.cut)*handles.vidHeight] + [handles.B(1) handles.B(2) 0 0],'color','blue');
     end
     
     if isfield(handles, 'D')
         if ~isvalid(handles.D)
-            handles.D = images.roi.Rectangle(handles.axes1,'position', [1 handles.parms.apo.deep.cut(1)*handles.vidHeight w diff(handles.parms.apo.deep.cut)*handles.vidHeight],'color','green');
+            handles.D = images.roi.Rectangle(handles.axes1,'position', [1 handles.parms.apo.deep.cut(1)*handles.vidHeight n diff(handles.parms.apo.deep.cut)*handles.vidHeight] + [handles.B(1) handles.B(2) 0 0],'color','green');
         end
     else
-       handles.D = images.roi.Rectangle(handles.axes1,'position', [1 handles.parms.apo.deep.cut(1)*handles.vidHeight w diff(handles.parms.apo.deep.cut)*handles.vidHeight],'color','green');
+       handles.D = images.roi.Rectangle(handles.axes1,'position', [1 handles.parms.apo.deep.cut(1)*handles.vidHeight n diff(handles.parms.apo.deep.cut)*handles.vidHeight] + [handles.B(1) handles.B(2) 0 0],'color','green');
     end
     
     %% Aponeurosis detection
     axes(handles.axes1);
     
-    handles.parms.apo.super.cut = [handles.S.Position(2) handles.S.Position(2)+handles.S.Position(4)] / handles.vidHeight;
-    handles.parms.apo.deep.cut = [handles.D.Position(2) handles.D.Position(2)+handles.D.Position(4)] / handles.vidHeight;
-    
+    handles.parms.apo.super.cut = ([handles.S.Position(2) handles.S.Position(2)+handles.S.Position(4)] - handles.B(2)) / handles.vidHeight;
+    handles.parms.apo.deep.cut = ([handles.D.Position(2) handles.D.Position(2)+handles.D.Position(4)] - handles.B(2)) / handles.vidHeight;
+
     set(handles.S, 'EdgeAlpha',0,'FaceAlpha',0.1,'InteractionsAllowed','none')
     set(handles.D, 'EdgeAlpha',0,'FaceAlpha',0.1,'InteractionsAllowed','none')
+
     
     % find the first frame
     frame_no = handles.start_frame + round(get(handles.frame_slider,'Value')) - 1;
     
     % % detect orientation
-    data = imresize(handles.ImStack(:,:,frame_no), 1/handles.imresize_fac);
+    Im = handles.ImStack(handles.B(2):(handles.B(2)+handles.B(4)-1), handles.B(1):(handles.B(1)+handles.B(3)-1),frame_no);
+    data = imresize(Im, 1/handles.imresize_fac);
     
     % run TimTrack
     handles.parms.fas.redo_ROI = 1;
@@ -2628,9 +2673,9 @@ function flipimage_Callback(hObject, eventdata, handles)
 % Hint: get(hObject,'Value') returns toggle state of flipimage
 handles = do_flip(hObject, eventdata, handles);
 %end
-guidata(hObject, handles);
-show_image(hObject,handles);
 
+show_image(hObject,handles);
+guidata(hObject, handles);
 
 % ----- Function to perform flipping
 function [handles] = do_flip(hObject, eventdata, handles)
