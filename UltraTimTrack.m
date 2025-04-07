@@ -336,6 +336,14 @@ set(handles.frame_number,'String',num2str(1))
 % allows Cut_frames_before_Callback to work
 handles.start_frame = 1;
 
+if ~handles.trackbck_chkBox.Value
+    handles.frame0 = handles.start_frame;
+    handles.direction = 1; % forward direction
+else
+    handles.frame0 = handles.start_frame + handles.NumFrames - 1;
+    handles.direction = -1; % backward direction
+end
+
 % set the limits on the slider - use number of frames to set maximum (min =
 % 1)
 set(handles.frame_slider,'Min',1);
@@ -428,11 +436,15 @@ function cut_frames_before_Callback(hObject, eventdata, handles)
 
 if isfield(handles,'movObj')||isfield(handles,'BIm')||isfield(handles,'ImStack')
     
-    frame_no = round(get(handles.frame_slider,'Value'));
-    
-    handles.start_frame = frame_no + handles.start_frame;
-    
+    % reset start_frame to the current frame and adjust NumFrames
+    handles.start_frame = handles.start_frame + round(get(handles.frame_slider,'Value'));
     handles.NumFrames = handles.NumFrames-handles.start_frame+1;
+
+    if ~handles.trackbck_chkBox.Value
+        handles.frame0 = handles.start_frame;
+    else
+        handles.frame0 = handles.start_frame + handles.NumFrames - 1;
+    end
     
     handles.Time = handles.Time(handles.start_frame:handles.start_frame + handles.NumFrames-1);
     
@@ -458,6 +470,14 @@ if isfield(handles,'movObj')||isfield(handles,'BIm')||isfield(handles,'ImStack')
     
     handles.NumFrames = frame_no;
     
+    if ~handles.trackbck_chkBox.Value
+        handles.frame0 = handles.start_frame;
+        handles.direction = 1; % forward direction
+    else
+        handles.frame0 = handles.start_frame + handles.NumFrames - 1;
+        handles.direction = -1; % backward direction
+    end
+
     set(handles.frame_slider,'Min',1);
     set(handles.frame_slider,'Max',handles.NumFrames);
     set(handles.frame_slider,'Value',handles.NumFrames);
@@ -755,7 +775,7 @@ if isfield(handles,'ImStack')
     handles.ImStack     = zeros(handles.vidHeight, handles.vidWidth, handles.NumFrames,'uint8');
     
     %Crop all images before updating
-    for ii = handles.start_frame : handles.NumFrames
+    for ii = size(handles.ImStack,3)
         handles.ImStack(:,:,ii) = imcrop(ImStackOld(:,:,ii),handles.crop_rect);
     end
     
@@ -988,7 +1008,7 @@ if isfield(handles,'ImStack')
     i = 1;
     j = 1;
     
-    for f = handles.start_frame:1:get(handles.frame_slider,'Max')
+    for f = handles.start_frame:(handles.start_frame + handles.NumFrames - 1)
         
         if isfield(handles, 'Region')
             % create tracked frame
@@ -1606,33 +1626,17 @@ function[handles] = process_all_Callback(hObject, eventdata, handles)
 % eventdata  reserved - to be defined in a future version of MATLAB
 % handles    structure with handles and user data (see GUIDATA)
 
-% based on chkBox backward tracking goes to first or last frame
-% necessary as it needs later to check whether pts to be tracked are already
-% loaded, otherwise autodetect 
-if handles.trackbck_chkBox.Value == 0
-    frame0 = 1;
-else
-    frame0 = handles.NumFrames;
-end
-
-% set the slider and frame number for clarity
-set(handles.frame_slider,'Value',frame0);
-set(handles.frame_number,'String',num2str(frame0));
-
 % detect first frame if required or last frame if backward tracking
-if ~isfield(handles,'Region') || isnan(handles.Region(1).fas_length(frame0+handles.start_frame-1))%fas length is in the correct index now
+if ~isfield(handles,'Region') || isnan(handles.Region(1).fas_length(handles.frame0))
+    % needed because Auto_Detect works on current frame
+    set(handles.frame_slider,'Value',handles.frame0 - handles.start_frame + 1);
+    set(handles.frame_number,'String',num2str(handles.frame0 - handles.start_frame + 1));
+
     handles = Auto_Detect_Callback(hObject, eventdata, handles);
 end
 
 % Run TimTrack
 handles = process_all_TimTrack(hObject, eventdata, handles);
-
-% reset fas_x and fas_y to original values
-i = 1;
-j = 1;
-frame_no = handles.start_frame;
-handles.Region(i).Fascicle(j).fas_x{frame_no} = handles.Region(i).Fascicle(j).fas_x_original{frame_no};
-handles.Region(i).Fascicle(j).fas_y{frame_no} = handles.Region(i).Fascicle(j).fas_y_original{frame_no};
 
 if ~handles.TimTrack_mode.Value
     % Run Ultratrack
@@ -1652,11 +1656,7 @@ guidata(hObject, handles);
 function[handles] = process_all_TimTrack(hObject, eventdata, handles)
 
 % run TimTrack on all frames
-if handles.trackbck_chkBox.Value == 1
-    frames = (handles.start_frame + handles.NumFrames-1):-1:(handles.start_frame);
-else
-    frames = (handles.start_frame):(handles.start_frame + handles.NumFrames-1);
-end
+frames = handles.frame0:handles.direction:(handles.frame0 + handles.direction * (handles.NumFrames-1)); 
 
 % remove super_pos and deep_pos from geofeatures
 if isfield(handles.geofeatures, 'super_pos')
@@ -1806,11 +1806,7 @@ h = waitbar(0,['Processing frame 1/', num2str(handles.NumFrames)],'Name','Runnin
 
 tstart = tic;
 
-if handles.trackbck_chkBox.Value == 1
-    frames = (handles.start_frame + handles.NumFrames-1):-1:handles.start_frame;
-else
-    frames = handles.start_frame:(handles.start_frame + handles.NumFrames-1);
-end
+frames = handles.frame0:handles.direction:(handles.frame0 + handles.direction * (handles.NumFrames-1)); 
 
 n = handles.vidWidth;
 m = handles.vidHeight;
@@ -1819,12 +1815,8 @@ for i = 1:length(handles.Region)
     for f = frames
         
         % previous frame
-        if handles.trackbck_chkBox.Value == 1
-            fprev = f+1;
-        else
-            fprev = f-1;
-        end
-        
+        fprev = f - handles.direction;
+
         % extract image
         im = handles.ImStack(:,:,f);
         
@@ -1836,8 +1828,9 @@ for i = 1:length(handles.Region)
         ROIx = handles.Region(i).ROIx{f};
 
         for j = 1:length(handles.Region(i).Fascicle)
-           
+                       
             if f == frames(1) || ~exist('fpointTracker','var') % first frame: detect points
+           
                 % detect points
                 fpoints = detectMinEigenFeatures(I_fmasked,'FilterSize',11, 'MinQuality', 0.005);
                 
@@ -1864,6 +1857,10 @@ for i = 1:length(handles.Region)
                     apointTracker = vision.PointTracker('NumPyramidLevels',4,'MaxIterations',50,'MaxBidirectionalError',inf,'BlockSize',handles.BlockSize);
                     initialize(apointTracker,apoints,im);
                 end
+                
+                % reset fas_x and fas_y to original values
+                handles.Region(i).Fascicle(j).fas_x{f} = handles.Region(i).Fascicle(j).fas_x_original{f};
+                handles.Region(i).Fascicle(j).fas_y{f} = handles.Region(i).Fascicle(j).fas_y_original{f};
                 
             else % not the first frame
                 
@@ -1949,9 +1946,6 @@ for i = 1:length(handles.Region)
                 % points must be in ROI
                 inPoints = inpolygon(fpoints(:,1),fpoints(:,2), ROIx, ROIy);
                 fpoints = fpoints(inPoints,:);                
-
-                % save the points
-                handles.points{f} = fpoints;
                 
                 % set tracker
                 setPoints(fpointTracker, fpoints);
@@ -1976,14 +1970,21 @@ for i = 1:length(handles.Region)
                     dinPoints = inpolygon(apoints(:,1),apoints(:,2), ROIx, ROIyd);
                     sinPoints = inpolygon(apoints(:,1),apoints(:,2), ROIx, ROIys);
                     apoints = apoints(dinPoints | sinPoints,:);
-                    
-                    % save the points
-                    handles.apoints{f} = apoints;
+                   
                     
                     % set tracker
                     setPoints(apointTracker, apoints);
                 end
-            end            
+            end
+            
+            if strcmp(handles.ROItype(1:5), 'Hough')
+                % save the points
+                handles.apoints{f} = apoints;
+            end
+
+            % save the points
+            handles.points{f} = fpoints;
+
         end
         
         frac_progress = ((f-handles.start_frame)+(get(handles.frame_slider,'Max')*(i-1))) / (get(handles.frame_slider,'Max')*length(handles.Region));
@@ -2004,41 +2005,31 @@ function[handles] = do_state_estimation(hObject, eventdata, handles)
 if ~isnan(handles.Q)
     handles = estimate_variance(hObject, eventdata, handles);
     
-    if handles.trackbck_chkBox.Value == 0
-        frames = handles.start_frame:length(handles.geofeatures);
-    else
-        frames = length(handles.geofeatures):-1:handles.start_frame;
-    end
+    frames = handles.frame0:handles.direction:(handles.frame0 + handles.direction * (handles.NumFrames-1)); 
+    
+    % reset fas_x and fas_y to original values
+    i = 1;
+    j = 1;
+    handles.Region(i).Fascicle(j).fas_x{frames(1)} = handles.Region(i).Fascicle(j).fas_x_original{frames(1)};
+    handles.Region(i).Fascicle(j).fas_y{frames(1)} = handles.Region(i).Fascicle(j).fas_y_original{frames(1)};
     
     % initialize state estimator
     handles = initialize_state_estimator(handles);
     
     % aponeurosis state estimation
     for f = 2:length(frames)
-        for i = 1:length(handles.Region)
-            for j = 1:length(handles.Region(i).Fascicle)
-                handles = apo_state_estimator(handles,frames(f),frames(f-1));
-            end
-        end
+        handles = apo_state_estimator(handles,frames(f),frames(f-1));
     end
 
     % fascicle state estimation
     for f = 2:length(frames)
-        for i = 1:length(handles.Region)
-            for j = 1:length(handles.Region(i).Fascicle)
-                handles = state_estimator(handles,frames(f),frames(f-1));
-            end
-        end
+        handles = state_estimator(handles,frames(f),frames(f-1));
     end
     
     % Rauch-Tung-Striebel backwards filter
     reversed_frames = flip(frames);
     for f = 2:length(reversed_frames)
-        for i = 1:length(handles.Region)
-            for j = 1:length(handles.Region(i).Fascicle)
-                handles = state_smoothener(handles,reversed_frames(f),reversed_frames(f-1));
-            end
-        end
+        handles = state_smoothener(handles,reversed_frames(f),reversed_frames(f-1));
     end
 
     show_image(hObject,handles);
@@ -2051,41 +2042,33 @@ function[handles] = initialize_state_estimator(handles)
 i = 1;
 j = 1;
 
-if handles.trackbck_chkBox.Value == 0
-    frame0 = handles.start_frame;
-    m = 1;
-else
-    frame0 = handles.start_frame + handles.NumFrames - 1;
-    m = -1;
-end
-
 Rs = handles.R(2:end) * .01;
-handles.Region(i).apo_p{frame0} = Rs';
+handles.Region(i).apo_p{handles.frame0} = Rs';
 
 alpha0 = nan(1,handles.NS);
 
 for k = 1:handles.NS % number of starting frames
-    alpha0(k) = atan2d(-diff(handles.Region(i).Fascicle(j).fas_y{frame0+m*k}), diff(handles.Region(i).Fascicle(j).fas_x{frame0+m*k}));
+    alpha0(k) = atan2d(-diff(handles.Region(i).Fascicle(j).fas_y{handles.frame0+handles.direction*k}), diff(handles.Region(i).Fascicle(j).fas_x{handles.frame0+handles.direction*k}));
 end
 
-handles.Region(i).Fascicle(j).X_plus{frame0} = [handles.Region(i).Fascicle(j).fas_x{frame0}(2) mean(alpha0)];    
-handles.Region(i).Fascicle(j).fas_p{frame0} = [0 var(alpha0)];
+handles.Region(i).Fascicle(j).X_plus{handles.frame0} = [handles.Region(i).Fascicle(j).fas_x{handles.frame0}(2) mean(alpha0)];    
+handles.Region(i).Fascicle(j).fas_p{handles.frame0} = [0 var(alpha0)];
 
 % if manual is available for first frame, overrule
 if isfield(handles.Region(i).Fascicle(j), 'fas_x_manual')
     if ~isempty(handles.Region(i).Fascicle(j).fas_x_manual)
-        if ~isempty(handles.Region(i).Fascicle(j).fas_x_manual{frame0})
-            handles.Region(i).Fascicle(j).X_plus{frame0} = [handles.Region(i).Fascicle(j).fas_x_manual{frame0}(2) handles.Region(i).fas_ang_manual(frame0)];
-            handles.Region(i).Fascicle(j).fas_p{frame0} = [0 0];
+        if ~isempty(handles.Region(i).Fascicle(j).fas_x_manual{handles.frame0})
+            handles.Region(i).Fascicle(j).X_plus{handles.frame0} = [handles.Region(i).Fascicle(j).fas_x_manual{handles.frame0}(2) handles.Region(i).fas_ang_manual(handles.frame0)];
+            handles.Region(i).Fascicle(j).fas_p{handles.frame0} = [0 0];
         end
     end
 end
 
 % a priori is the same as a positeriori
-handles.Region(i).Fascicle(j).fas_p_minus{frame0} = handles.Region(i).Fascicle(j).fas_p{frame0};
-handles.Region(i).Fascicle(j).X_minus{frame0} = handles.Region(i).Fascicle(j).X_plus{frame0};
+handles.Region(i).Fascicle(j).fas_p_minus{handles.frame0} = handles.Region(i).Fascicle(j).fas_p{handles.frame0};
+handles.Region(i).Fascicle(j).X_minus{handles.frame0} = handles.Region(i).Fascicle(j).X_plus{handles.frame0};
 
-handles = update_Fascicle(handles,frame0);
+handles = update_Fascicle(handles,handles.frame0);
 
 
 function[handles] = state_estimator(handles,frame_no,prev_frame_no)
@@ -2120,7 +2103,7 @@ R(1) = handles.X;
 s.x_minus = x_minus(1);
 
 % 'measurement', here is the first value
-y(1) = handles.Region(i).Fascicle(j).fas_x{handles.start_frame}(2);
+y(1) = handles.Region(i).Fascicle(j).fas_x{handles.frame0}(2);
 
 % if there is a manual estimate, add a second measurement
 if isfield(handles.Region(i).Fascicle(j), 'fas_x_manual')
@@ -2239,6 +2222,44 @@ handles.Region(i).Fascicle(j).K(frame_no) = Kgain;
 
 % update fascicle
 handles = update_Fascicle(handles,frame_no);
+
+
+function[handles] = update_Fascicle(handles,frame_no)
+% gets fascicle tracking estimates from the state and tracked aponeuroses
+i = 1;
+j = 1;
+
+% get the state
+fasx2_plus = handles.Region(i).Fascicle(j).X_plus{frame_no}(1);
+alpha_plus = handles.Region(i).Fascicle(j).X_plus{frame_no}(2);
+
+% fit the current aponeurosis
+super_apo   = [handles.Region(i).sup_x{frame_no} handles.Region(i).sup_y{frame_no}];
+deep_apo    = [handles.Region(i).deep_x{frame_no} handles.Region(i).deep_y{frame_no}];
+super_coef  = polyfit(super_apo(:,1), super_apo(:,2), 1);
+deep_coef   = polyfit(deep_apo(:,1), deep_apo(:,2), 1);
+
+% vertical location is fixed
+fasy2 = handles.Region(i).Fascicle(j).fas_y{handles.frame0}(2);
+
+% get the deep attachment point from the superficial point and the angle
+fas_coef(1) = -tand(alpha_plus);
+fas_coef(2) =  fasy2 - fas_coef(1) * fasx2_plus;
+
+% deep
+fasx1_end = (fas_coef(2) - deep_coef(2)) / (deep_coef(1) - fas_coef(1));
+fasy1_end = deep_coef(2) + fasx1_end*deep_coef(1);
+
+% superficial
+fasx2_end = (fas_coef(2) - super_coef(2)) / (super_coef(1) - fas_coef(1));
+fasy2_end = super_coef(2) + fasx2_end*super_coef(1);
+
+% update
+% state and dependent variables
+handles.Region(i).Fascicle(j).fas_x{frame_no}   = [fasx1_end; fasx2_end];
+handles.Region(i).Fascicle(j).fas_y{frame_no}   = [fasy1_end; fasy2_end];
+
+handles = calc_fascicle_length_and_pennation(handles,frame_no);
 
 
 
@@ -2442,46 +2463,6 @@ function[Q] = getQ(handles, dx)
 % Optical flow error is proportional to flow
 Q = handles.Q  * dx^2;
 
-function[handles] = update_Fascicle(handles,frame_no)
-% gets fascicle tracking estimates from the state and tracked aponeuroses
-i = 1;
-j = 1;
-
-% get the state
-fasx2_plus = handles.Region(i).Fascicle(j).X_plus{frame_no}(1);
-alpha_plus = handles.Region(i).Fascicle(j).X_plus{frame_no}(2);
-
-% fit the current aponeurosis
-super_apo   = [handles.Region(i).sup_x{frame_no} handles.Region(i).sup_y{frame_no}];
-deep_apo    = [handles.Region(i).deep_x{frame_no} handles.Region(i).deep_y{frame_no}];
-super_coef  = polyfit(super_apo(:,1), super_apo(:,2), 1);
-deep_coef   = polyfit(deep_apo(:,1), deep_apo(:,2), 1);
-
-% get the vertical point from the estimated aponeurosis
-% fasy2_plus = super_coef(2) + fasx2_plus*super_coef(1);
-
-% vertical location is fixed
-fasy2 = handles.Region(i).Fascicle(j).fas_y{handles.start_frame}(2);
-
-% get the deep attachment point from the superficial point and the angle
-fas_coef(1) = -tand(alpha_plus);
-fas_coef(2) =  fasy2 - fas_coef(1) * fasx2_plus;
-
-% deep
-fasx1_end = (fas_coef(2) - deep_coef(2)) / (deep_coef(1) - fas_coef(1));
-fasy1_end = deep_coef(2) + fasx1_end*deep_coef(1);
-
-% superficial
-fasx2_end = (fas_coef(2) - super_coef(2)) / (super_coef(1) - fas_coef(1));
-fasy2_end = super_coef(2) + fasx2_end*super_coef(1);
-
-%% update
-% state and dependent variables
-handles.Region(i).Fascicle(j).fas_x{frame_no}   = [fasx1_end; fasx2_plus];
-handles.Region(i).Fascicle(j).fas_y{frame_no}   = [fasy1_end; fasy2];
-
-handles = calc_fascicle_length_and_pennation(handles,frame_no);
-
 
 function[handles] = calc_fascicle_length_and_pennation(handles,frame_no)
 i = 1;
@@ -2603,8 +2584,8 @@ function [handles] = Auto_Detect_Callback(hObject, eventdata, handles)
     handles.Region(i).Fascicle.fas_x{frame_no} = [Deep_intersect_x Super_intersect_x]';
     handles.Region(i).Fascicle.fas_y{frame_no} = [Deep_intersect_y Super_intersect_y]';
     
-    handles.Region.Fascicle.fas_x_original{frame_no} = handles.Region.Fascicle.fas_x{1};
-    handles.Region.Fascicle.fas_y_original{frame_no} = handles.Region.Fascicle.fas_y{1};
+    handles.Region.Fascicle.fas_x_original{frame_no} = handles.Region.Fascicle.fas_x{frame_no};
+    handles.Region.Fascicle.fas_y_original{frame_no} = handles.Region.Fascicle.fas_y{frame_no};
     
     [handles] = calc_fascicle_length_and_pennation(handles,frame_no);
     
@@ -3607,26 +3588,38 @@ function trackbck_chkBox_CreateFcn(hObject, eventdata, handles)
 % eventdata  reserved - to be defined in a future version of MATLAB
 % handles    empty - handles not created until after all CreateFcns called
 
+i = get(hObject, 'Value');
+
+if i == 0
+    handles.frame0 = 1;
+    handles.direction = 1; % forward direction
+else
+    handles.frame0 = handles.NumFrames;
+    handles.direction = -1; % backward direction
+end
+
+% Update handles structure
+guidata(hObject, handles);
+    
 
 % --- Executes on button press in trackbck_chkBox.
 function trackbck_chkBox_Callback(hObject, eventdata, handles)
 % hObject    handle to trackbck_chkBox (see GCBO)
 % eventdata  reserved - to be defined in a future version of MATLAB
 % handles    structure with handles and user data (see GUIDATA)
-tmp = ~handles.trackbck_chkBox.Value; %trick to force previous value (in case tracking forwards, and then some check and change variance)
-if isfield(handles,'Region')
-    
-    %check whether all frames have been already tracked with
-    %opticflow, if yes re-run it with the new block size
-    if sum(~cellfun(@isempty, handles.Region.Fascicle.fas_x, 'UniformOutput', true)) >= handles.NumFrames
-        %if size(handles.Region(i).Fascicle.analysed_frames,2) > 0 %double check this
-        %force to not be possible to track backwards to avoid messy
-        %estimations
-        set(handles.trackbck_chkBox,'Value',tmp)
-        
-    end
-    
+
+if ~handles.trackbck_chkBox.Value
+    handles.frame0 = handles.start_frame;
+    handles.direction = 1; % forward direction
+else
+    handles.frame0 = handles.start_frame + handles.NumFrames - 1;
+    handles.direction = -1; % backward direction
 end
+
+
+% Update handles structure
+guidata(hObject, handles);
+
 % Hint: get(hObject,'Value') returns toggle state of trackbck_chkBox
 
 
