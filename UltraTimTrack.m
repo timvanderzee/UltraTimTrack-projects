@@ -2032,6 +2032,11 @@ if ~isnan(handles.Q)
         handles = state_smoothener(handles,reversed_frames(f),reversed_frames(f-1));
     end
 
+    % update fascicle
+    for f = 1:length(frames)
+        handles = update_Fascicle(handles,frames(f));
+    end
+    
     show_image(hObject,handles);
     show_data(hObject, handles);
     guidata(hObject, handles);
@@ -2220,8 +2225,24 @@ handles.Region(i).Fascicle(j).fas_p_minus{frame_no} = [supP_minus fasP_minus];
 % kalman xshiftcor for fascicle
 handles.Region(i).Fascicle(j).K(frame_no) = Kgain;
 
-% update fascicle
-handles = update_Fascicle(handles,frame_no);
+% update deep point
+deep_apo    = [handles.Region(i).deep_x{frame_no} handles.Region(i).deep_y{frame_no}];
+deep_coef   = polyfit(deep_apo(:,1), deep_apo(:,2), 1);
+
+% vertical location is fixed
+fasy2 = handles.Region(i).Fascicle(j).fas_y{handles.frame0}(2);
+
+% get the deep attachment point from the superficial point and the angle
+fas_coef(1) = -tand(alpha_plus);
+fas_coef(2) =  fasy2 - fas_coef(1) * fasx2_plus;
+
+% deep
+fasx1_end = (fas_coef(2) - deep_coef(2)) / (deep_coef(1) - fas_coef(1));
+fasy1_end = deep_coef(2) + fasx1_end*deep_coef(1);
+
+% update fascicle points
+handles.Region(i).Fascicle(j).fas_x{frame_no}   = [fasx1_end; fasx2_plus];
+handles.Region(i).Fascicle(j).fas_y{frame_no}   = [fasy1_end; fasy2];
 
 
 function[handles] = update_Fascicle(handles,frame_no)
@@ -2254,13 +2275,12 @@ fasy1_end = deep_coef(2) + fasx1_end*deep_coef(1);
 fasx2_end = (fas_coef(2) - super_coef(2)) / (super_coef(1) - fas_coef(1));
 fasy2_end = super_coef(2) + fasx2_end*super_coef(1);
 
-% update
 % state and dependent variables
 handles.Region(i).Fascicle(j).fas_x{frame_no}   = [fasx1_end; fasx2_end];
 handles.Region(i).Fascicle(j).fas_y{frame_no}   = [fasy1_end; fasy2_end];
 
+% calculate fascicle length and pennation
 handles = calc_fascicle_length_and_pennation(handles,frame_no);
-
 
 
 function[handles] = apo_state_estimator(handles,frame_no,prev_frame_no)
@@ -2392,12 +2412,6 @@ end
 handles.Region(i).Fascicle(j).X_plus{frame_no} = xsmooth;
 handles.Region(i).Fascicle(j).fas_p{frame_no} = Psmooth;
 handles.Region(i).Fascicle(j).A{frame_no} = A;
-
-% update fascicle
-handles = update_Fascicle(handles,frame_no);
-
-% calculate the length and pennation for the current frame
-handles = calc_fascicle_length_and_pennation(handles,frame_no);
 
 
 function [K] = run_kalman_filter(k)
