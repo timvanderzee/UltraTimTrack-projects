@@ -664,14 +664,9 @@ if isfield(handles,'ImStack')
         handles = rmfield(handles,'Region');
     end
  
-    
     % set current frame to 1
     set(handles.frame_slider,'Value',1);
     set(handles.frame_number,'String',1);
-    
-    % extract parameters from the regions
-    handles.UTT.TT.parms.apo.super.cut = [handles.Region.S.Position(2) handles.Region.S.Position(2)+handles.Region.S.Position(4)] / handles.UTT.imHeight;
-    handles.UTT.TT.parms.apo.deep.cut = [handles.Region.D.Position(2) handles.Region.D.Position(2)+handles.Region.D.Position(4)] / handles.UTT.imHeight;
     
     % clear axes
     cla(handles.length_plot)
@@ -697,31 +692,37 @@ dIm = sum(abs(diff(handles.ImStack,1, 3)),3);
 ndIm = dIm / max(dIm(:));
 
 % threshold
-th = .05;
-ndIm(ndIm>th) = 1;
-ndIm(ndIm<=th)= 0;
+indIm = imbinarize(ndIm);
 
 % find connected components in the filtered matrix.
-BW2 = bwareaopen(ndIm,50);
+BW2 = bwareaopen(indIm,200);
 stats = regionprops(BW2, 'BoundingBox');
 
 % extract the bounding box information.
 boundingBoxes = cat(1, stats.BoundingBox);
 
+% remove Bi
+if isfield(handles.UTT, 'Bi')
+    handles.UTT = rmfield(handles.UTT, 'Bi');
+end
+
+if isfield(handles, 'Region')
+    if isfield(handles.Region, 'S')
+        handles.Region.S = rmfield(handles.Region, 'S');
+    end
+
+    if isfield(handles.Region, 'D')
+        handles.Region.D = rmfield(handles.Region, 'D');
+    end
+end
+
 % calculate the overall bounding box that encompasses all smaller bounding boxes.
-B = round([min(boundingBoxes(:, 1)), min(boundingBoxes(:, 2)), ...
+handles.UTT.B = round([min(boundingBoxes(:, 1)), min(boundingBoxes(:, 2)), ...
     max(boundingBoxes(:, 1) + boundingBoxes(:, 3)) - min(boundingBoxes(:, 1)), ...
     max(boundingBoxes(:, 2) + boundingBoxes(:, 4)) - min(boundingBoxes(:, 2))]);
 
-if ~isfield(handles.UTT,'Bi') || ~isvalid(handles.UTT.Bi)
-    handles.UTT.B = B;
-    handles.UTT.Bi = images.roi.Rectangle(handles.axes1,'position', B,'color','yellow','FaceAlpha',0,'FaceSelectable',0,'Linewidth',1,'StripeColor','white');
-else
-    set(handles.UTT.Bi, 'position',B);
-end
-
-handles.UTT.imWidth = length(handles.UTT.Bi.Position(1):(handles.UTT.Bi.Position(1)+handles.UTT.Bi.Position(3)-1));
-handles.UTT.imHeight = length(handles.UTT.Bi.Position(2):(handles.UTT.Bi.Position(2)+handles.UTT.Bi.Position(4)-1));
+handles.UTT.imWidth = length(handles.UTT.B(1):(handles.UTT.B(1)+handles.UTT.B(3)-1));
+handles.UTT.imHeight = length(handles.UTT.B(2):(handles.UTT.B(2)+handles.UTT.B(4)-1));
 
 % Update handles structure
 guidata(hObject, handles);
@@ -959,72 +960,28 @@ function save_video_Callback(hObject, eventdata, handles)
 % hObject    handle to save_video (see GCBO)
 % eventdata  reserved - to be defined in a future version of MATLAB
 % handles    structure with handles and user data (see GUIDATA)
+  
+vidObj = VideoWriter([handles.US.pname, handles.US.fname(1:end-4), '_tracked'],'MPEG-4');
+vidObj.FrameRate = handles.US.FrameRate;
+open(vidObj);
 
-if isfield(handles,'ImStack')
-    
-    filename = [handles.US.pname, handles.US.fname(1:end-4), '_tracked_Q=',strrep(num2str(handles.UTT.KF.Q),'.','')];
-    vidObj = VideoWriter(filename,'MPEG-4');
-    vidObj.FrameRate = handles.US.FrameRate;
-    open(vidObj);
-    
-    h = waitbar(0,['Saving frame 1/', num2str(handles.US.NumFrames)],'Name','Saving to video file...');
-    i = 1;
-    j = 1;
-    
-    for f = handles.UTT.start_frame:(handles.UTT.start_frame + handles.US.NumFrames - 1)
-        if isfield(handles.Region, 'Fascicle')
-           
-            currentImage = handles.ImStack(:,:,f);
-            
-            % add fascicle
-            currentImage = insertShape(currentImage,'line',[handles.Region(i).Fascicle(j).fas_x{f}(1)+d, handles.Region(i).Fascicle(j).fas_y{f}(1), ...
-                handles.Region(i).Fascicle(j).fas_x{f}(2)+d,handles.Region(i).Fascicle(j).fas_y{f}(2)], 'LineWidth',5, 'Color','red');
-            
-            currentImage = insertMarker(currentImage,[handles.Region(i).Fascicle(j).fas_x{f}(1)+d, handles.Region(i).Fascicle(j).fas_y{f}(1);...
-                handles.Region(i).Fascicle(j).fas_x{f}(2)+d, handles.Region(i).Fascicle(j).fas_y{f}(2)], 'o', 'Color','red','size',5);
-            
-            % add aponeurosis
-            currentImage = insertShape(currentImage,'line',[handles.Region(i).sup_x{f}(1)+d, handles.Region(i).sup_y{f}(1), ...
-                handles.Region(i).sup_x{f}(2)+d,handles.Region(i).sup_y{f}(2)], 'LineWidth',5, 'Color','blue');
-            
-            currentImage = insertShape(currentImage,'line',[handles.Region(i).deep_x{f}(1)+d, handles.Region(i).deep_y{f}(1), ...
-                handles.Region(i).deep_x{f}(2)+d,handles.Region(i).deep_y{f}(2)], 'LineWidth',5, 'Color','green');
-            
-            % add ROI
-            currentImage = insertShape(currentImage,'Polygon',[handles.Region(i).UT.ROIx{f}(1)+d, handles.Region(i).UT.ROIy{f}(1), ...
-                handles.Region(i).UT.ROIx{f}(2)+d, handles.Region(i).UT.ROIy{f}(2),handles.Region(i).UT.ROIx{f}(3)+d, handles.Region(i).UT.ROIy{f}(3),...
-                handles.Region(i).UT.ROIx{f}(4)+d, handles.Region(i).UT.ROIy{f}(4),handles.Region(i).UT.ROIx{f}(5)+d, handles.Region(i).UT.ROIy{f}(5)],'LineWidth',1, 'Color','red');
-            
-            % save
-            ImTrack = currentImage;
-        else
-            ImTrack = handles.ImStack(:,:,f);
-        end
-        
-        if isfield(handles.Region, 'S')
-            if isvalid(handles.Region.S)
-                % show region
-                spos = ceil([handles.Region.S.Position(1:2) ceil(size(handles.ImStack,2)/2) handles.Region.S.Position(4)]);
-                dpos = ceil([handles.Region.D.Position(1:2) ceil(size(handles.ImStack,2)/2) handles.Region.D.Position(4)]);
-                
-                ImTrack(spos(2):(spos(2)+spos(4)),spos(1):(spos(1)+spos(3)),3) = 230;
-                ImTrack(dpos(2):(dpos(2)+dpos(4)),dpos(1):(dpos(1)+dpos(3)),2) = 230;
-            end
-        end
-        
-        F = ImTrack;
-        writeVideo(vidObj,F)
-        
-        frac_progress = f/handles.US.NumFrames;
-        waitbar(frac_progress,h, ['Processing frame ', num2str(f), '/', num2str(get(handles.frame_slider,'Max'))])
-        
-    end
-    %     end
-    close(vidObj)
-    close(h)
-    
+h = waitbar(0,['Saving frame 1/', num2str(handles.US.NumFrames)],'Name','Saving to video file...');
+
+for f = handles.UTT.start_frame:(handles.UTT.start_frame + handles.US.NumFrames - 1)
+
+    set(handles.frame_slider,'Value',f);
+    set(handles.frame_number,'String',num2str(f));
+    show_image(hObject,handles);
+
+    % write the current frame to the video file
+    writeVideo(vidObj,handles.image.CData)
+
+    frac_progress = f/handles.US.NumFrames;
+    waitbar(frac_progress,h, ['Processing frame ', num2str(f), '/', num2str(get(handles.frame_slider,'Max'))])
 end
 
+close(vidObj)
+close(h)
 
 % --------------------------------------------------------------------
 function menu_process_all_Callback(hObject, eventdata, handles)
@@ -3593,7 +3550,6 @@ guidata(hObject, handles);
 % Hint: get(hObject,'Value') returns toggle state of trackbck_chkBox
 
 
-
 % --------------------------------------------------------------------
 function menu_load_images_Callback(hObject, eventdata, handles)
 % hObject    handle to menu_load_images (see GCBO)
@@ -3661,6 +3617,8 @@ end
 handles.US.vidHeight = size(handles.ImStack,1);
 handles.US.vidWidth = size(handles.ImStack,2);
 handles.US.NumFrames = size(handles.ImStack,3);
+
+handles = AutoCrop_Callback(hObject, eventdata, handles);
 
 % crop
 % handles = AutoCrop_Callback(hObject, eventdata, handles);
@@ -3736,7 +3694,7 @@ for frame_no = 1:n
     Mx = round(m/2);
     My = mean([polyval(deep_coef, Mx) polyval(super_coef, Mx)]);
     
-    alpha = handles.Region.fas_ang(frame_no);
+    alpha =  handles.Region.Fascicle.UTT.fas_ang(frame_no);
     
     fas_coef(1) = -tand(alpha);
     fas_coef(2) =  My - Mx * fas_coef(1);
@@ -3821,4 +3779,6 @@ function [I_fmasked, I_amasked] = get_masked_image(im, f, handles)
         amask(amask > 1) = 1;
         I_amasked(amask~=1) = 0;
     end
+    
+    
 
