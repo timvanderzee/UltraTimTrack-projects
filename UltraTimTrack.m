@@ -361,8 +361,12 @@ end
 
 cd(handles.US.pname)
 
-% update the image axes using show_image function (bottom)
-handles = clear_fascicle_Callback(hObject, eventdata, handles);
+% clear any tracking
+handles = PreAllocate_Tracking(hObject, eventdata, handles);
+
+if isfield(handles.Region.Fascicle,'TT')
+    handles.Region.Fascicle = rmfield(handles.Region.Fascicle,'TT');
+end
 
 % autocrop
 handles = AutoCrop_Callback(hObject, eventdata, handles);
@@ -1350,9 +1354,7 @@ if isfield(handles,'ImStack')
     
     % update the B region if Bi exists
     if isfield(handles.UTT, 'Bi')
-        if isfield(handles.UTT.Bi, 'Position')
-            handles.UTT.B = handles.UTT.Bi.Position;
-        end
+        handles.UTT.B = handles.UTT.Bi.Position;
     end
 
     % extract locations to be plotted
@@ -2479,8 +2481,20 @@ function [handles] = do_flip(hObject, eventdata, handles)
 
 %handles.flip = ~handles.flip;%change value of flip
 
+if isfield(handles.UTT, "Bi")
+    handles.UTT.Bi.Position(1) = handles.US.vidWidth - handles.UTT.Bi.Position(1) - handles.UTT.Bi.Position(3);
+    
+end
+
 if isfield(handles,"Region")
+    
+    if isfield(handles.Region,'S') && isfield(handles.UTT, "Bi")
+        handles.Region.S.Position(1) = handles.UTT.Bi.Position(1);
+        handles.Region.D.Position(1) = handles.UTT.Bi.Position(1);
+    end
+    
     updateX = @(fas_x) flip(handles.UTT.imWidth - fas_x); %only here we need correction as axis starts from 1 (plotting)
+    
     
     for i = 1:numel(handles.Region)
         if isfield(handles.Region(i),"ROIx") && isfield(handles.Region(i),"ROIy")
@@ -2509,8 +2523,8 @@ if isfield(handles,"Region")
             end
         end
     end
-    
 end
+
 
 % If statement not necessary, if tick flip else flip back, so everytime flipimage
 % changes which depends on the callback, flip the image
@@ -2520,7 +2534,7 @@ if isfield(handles, 'ImStack')
     handles.ImStack = flip(handles.ImStack, 2);
 end
 
-
+% handles = AutoCrop_Callback(hObject, eventdata, handles);
 
 % --- Function to check whether ParallelToolbox exists and run it
 function chkParallelToolBox()
