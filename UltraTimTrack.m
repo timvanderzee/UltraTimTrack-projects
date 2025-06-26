@@ -2743,6 +2743,14 @@ for k = 1:numel(files) %foreach file
     set(handles.vid_width,'String',handles.US.vidWidth(1))
     set(handles.vid_height,'String',handles.US.vidHeight(1))
     
+    % clear ROI cache
+    handles = PreAllocate_Tracking(hObject, eventdata, handles);
+    
+    if isfield(handles.Region.Fascicle,'TT')
+        handles.Region.Fascicle = rmfield(handles.Region.Fascicle,'TT');
+    end
+
+
     % crop
     handles = AutoCrop_Callback(hObject, eventdata, handles);
     
