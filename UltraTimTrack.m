@@ -1483,6 +1483,125 @@ if isfield(handles,'ImStack')
     
 end
 
+%---------------------------------------------------------
+% Function to show image with appropriate image processing
+%---------------------------------------------------------
+function handles = show_image_without_rectangles(hObject, handles)
+
+if isfield(handles,'ImStack')
+    
+    % find current frame number from slider
+    frame_no = round(get(handles.frame_slider,'Value')) + handles.UTT.start_frame - 1;
+    
+    i = 1;
+    j = 1;
+    
+    % update the B region if Bi exists
+    if isfield(handles.UTT, 'Bi')
+        handles.UTT.B = handles.UTT.Bi.Position;
+    end
+
+    % extract locations to be plotted
+    fasx = handles.Region(i).Fascicle(j).fas_x{frame_no} + handles.UTT.B(1);
+    fasy = handles.Region(i).Fascicle(j).fas_y{frame_no} + handles.UTT.B(2);
+    fasx_m = [handles.Region(i).Fascicle(j).fas_x_manual{frame_no}] + handles.UTT.B(1);
+    fasy_m = [handles.Region(i).Fascicle(j).fas_y_manual{frame_no}] + handles.UTT.B(2);
+    FL = handles.Region(i).Fascicle(j).UTT.fas_length(:);
+    PEN = handles.Region(i).Fascicle(j).UTT.fas_pen(:);
+    
+    supx = handles.Region(i).sup_x{frame_no} + handles.UTT.B(1);
+    supy = handles.Region(i).sup_y{frame_no} + handles.UTT.B(2);
+    deepx = handles.Region(i).deep_x{frame_no} + handles.UTT.B(1);
+    deepy = handles.Region(i).deep_y{frame_no} + handles.UTT.B(2);
+    ROIx = handles.Region(i).UT.ROIx{frame_no} + handles.UTT.B(1);
+    ROIy = handles.Region(i).UT.ROIy{frame_no} + handles.UTT.B(2);
+    ptsx = handles.Region(i).UT.fas_points{frame_no}(:,1) + handles.UTT.B(1); 
+    ptsy = handles.Region(i).UT.fas_points{frame_no}(:,2) + handles.UTT.B(2); 
+
+    % start with the image
+    Im = handles.ImStack(:,:,frame_no);
+
+    % add manual fascicle
+    if sum(isfinite([fasx_m; fasy_m])) >= 4
+        Im = insertShape(Im,'line',[fasx_m(1), fasy_m(1), fasx_m(2),fasy_m(2)], 'LineWidth',5, 'Color','magenta');
+        Im = insertMarker(Im,[fasx_m(1), fasy_m(1); fasx_m(2), fasy_m(2)], 'o', 'Color','magenta','size',5);
+    end
+
+    % add fascicle
+    if sum(isfinite([fasx; fasy])) >= 4
+        Im = insertShape(Im,'line',[fasx(1), fasy(1), fasx(2),fasy(2)], 'LineWidth',5, 'Color','red');
+        Im = insertMarker(Im,[fasx(1), fasy(1); fasx(2), fasy(2)], 'o', 'Color','red','size',5);
+    end
+
+    % add aponeurosis
+    if sum(isfinite([supx; supy])) >= 4
+        Im = insertShape(Im,'line',[supx(1), supy(1),supx(2),supy(2)], 'LineWidth',5, 'Color','blue');
+    end
+
+    if sum(isfinite([deepx; deepy])) >= 4
+        Im = insertShape(Im,'line',[deepx(1), deepy(1),deepx(2),deepy(2)], 'LineWidth',5, 'Color','green');
+    end
+
+    % add ROI
+    if sum(isfinite([ROIx; ROIy])) >= 10
+        Im = insertShape(Im,'Polygon',[ROIx(1), ROIy(1), ROIx(2), ROIy(2),ROIx(3), ROIy(3), ROIx(4), ROIy(4), ROIx(5), ROIy(5)],'LineWidth',1, 'Color','red');
+    end
+
+    % add feature points
+    if sum(isfinite([ptsx; ptsy])) >= 10
+        Im = insertMarker(Im,[ptsx, ptsy], '+', 'Color','red','size',2);
+        Im = insertText(Im, [10 10], ['Number of feature points: ' ,num2str(length(handles.Region(i).UT.fas_points{frame_no}))],'BoxColor','white');
+    end
+
+    % plot the image
+    if ~isfield(handles, 'image') || ~isvalid(handles.image) % if it didn't exist yet
+        axes(handles.axes1)
+        handles.image = image(Im);
+        colormap(gray(256));
+        axis off;
+        axis equal
+
+    else
+        set(handles.image, 'CData',Im);  % if it did exist yet
+    end
+    
+    % flip things back if needed
+    if handles.flipimage.Value
+        title(handles.axes1,'\leftarrow Superficial fascicle attachment');
+        set(handles.axes1,'xdir','reverse')
+    else
+        title(handles.axes1,'Superficial fascicle attachment \rightarrow');
+        set(handles.axes1,'xdir','normal')
+    end
+    
+    % data plot
+    % remove previous vertical lines
+    children = get(handles.length_plot, 'children');
+    if length(children) > 2
+        delete(children(1));
+    end
+    
+    children = get(handles.mat_plot, 'children');
+    if length(children) > 2
+        delete(children(1));
+    end
+
+    if sum(isfinite(FL)) > 0
+        % add new vertical lines
+        line(handles.length_plot, 'xdata', handles.US.Time(frame_no) * ones(1,2), 'ydata', [.85*min(FL) 1.15*max(FL)],'color',[0 0 0]);
+        line(handles.mat_plot, 'xdata', handles.US.Time(frame_no) * ones(1,2), 'ydata', [.85*min(PEN) 1.15*max(PEN)],'color', [0 0 0]);
+    end
+    
+    if handles.TimTrack_mode.Value
+        show_data(hObject, handles)
+    end
+    
+    % Update handles structure
+    guidata(hObject, handles);
+    
+end
+
+
 % --- Executes on button press in process_all.
 function[handles] = process_all_Callback(hObject, eventdata, handles)
 % hObject    handle to process_all (see GCBO)
@@ -2771,7 +2890,7 @@ for k = 1:numel(files) %foreach file
     set(handles.frame_number,'String',num2str(frame_no));
 
     % show the new video
-    handles = show_image(hObject,handles);
+    handles = show_image_without_rectangles(hObject,handles);
     
     %load fascicle automatically if exists
     if exist([path '/Fas_Data/Fas_' name '.mat'],'file')
@@ -2798,7 +2917,7 @@ for k = 1:numel(files) %foreach file
     guidata(hObject, handles);
     
     % update the image axes using show_image function (bottom)
-    show_image(hObject,handles);
+    show_image_without_rectangles(hObject,handles);
 
     % process all based on what the ROI type is
     handles = process_all_Callback(hObject, eventdata, handles);
