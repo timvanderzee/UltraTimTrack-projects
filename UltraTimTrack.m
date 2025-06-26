@@ -923,6 +923,22 @@ if isfield(handles,'ImStack')
     
 end
 
+
+% --------------------------------------------------------------------
+function menu_save_ROI_Callback(hObject, eventdata, handles)
+% hObject    handle to menu_process_all (see GCBO)
+% eventdata  reserved - to be defined in a future version of MATLAB
+% handles    structure with handles and user data (see GUIDATA)
+filename = [mfilename,'.m'];
+fullpath = which(filename);
+mainfoldername = erase(fullpath,filename);
+
+ROI.UTT.Bi = handles.UTT.Bi;       
+ROI.Region.S = handles.Region.S;     
+ROI.Region.D = handles.Region.D;    
+save([mainfoldername 'manualROI.mat'],'ROI');
+
+
 % --------------------------------------------------------------------
 function save_video_Callback(hObject, eventdata, handles)
 % hObject    handle to save_video (see GCBO)
