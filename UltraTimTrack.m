@@ -2780,12 +2780,23 @@ for k = 1:numel(files) %foreach file
         mkdir([handles.US.pname 'Tracked/'])
     end
     handles.US.pname = [handles.US.pname 'Tracked/'];
+
+    load("manualROI.mat","ROI");
+    handles.UTT.Bi = ROI.UTT.Bi;       
+    handles.Region.S = ROI.Region.S;     
+    handles.Region.D = ROI.Region.D;  
     
+    % Update handles structure
+    guidata(hObject, handles);
+    
+    % update the image axes using show_image function (bottom)
+    show_image(hObject,handles);
+
     % process all based on what the ROI type is
     handles = process_all_Callback(hObject, eventdata, handles);
     
     % save
-    save_video_Callback(hObject, eventdata, handles)
+    %save_video_Callback(hObject, eventdata, handles)
     Save_As_Mat_Callback(hObject, eventdata, handles)
     
 end
