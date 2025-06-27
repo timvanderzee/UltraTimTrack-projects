@@ -696,7 +696,7 @@ handles.UTT.imHeight = length(handles.UTT.B(2):(handles.UTT.B(2)+handles.UTT.B(4
 guidata(hObject, handles);
 
 % update the image axes using show_image function (bottom)
-show_image(hObject,handles);
+show_image_without_rectangles(hObject,handles);
 
 % --------------------------------------------------------------------
 function menu_crop_image_Callback(hObject, eventdata, handles)
