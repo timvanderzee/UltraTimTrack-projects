@@ -35,6 +35,27 @@ Following, the same example flipped and "Define fascicle" re-run.
 9.	Following steps 5-8, other parameters can also be manually changed, including the value for the "Cut-off frequency" and the value for the "Measurement noise covariance x-coordinate sup. attachment"  (see manuscript). If these values are changed, the user should first inspect the fascicle length and angle plots, and if there are substantial deviations from a previous plot, then step 7 should be repeated
 10.	The feature points used for optical flow estimation by UltraTrack can also be changed by changing the ROI type from “Hough – local” to “Hough – global” (see manuscript).  
 
+### (Optional) To process multiple videos in a folder using UltraTimTrack’s batch mode, follow these steps:
+
+1. **Load a video in that folder** in the target folder by clicking **"File" → "Open video or image file"**, or pressing **"Ctrl+N"**, and selecting one of the videos that should be processed.
+
+2. **Resize the rectangles** that define the superficial (blue) and deep (green) aponeuroses, as well as the yellow box surrounding the region of interest (ROI).  
+   Ensure that:
+   - The aponeuroses are properly aligned within the blue and green rectangles.
+   - The entire fascicle and relevant structures are included in the yellow ROI box.
+   - These rectangles are appropriate for all videos in the folder.
+
+3. Once satisfied with the ROI setup, click the **menu bar item "Save ROI"** to store the defined ROI boxes into a file named `manualROI.mat`.  
+   This file will be saved in the main UltraTimTrack directory, and is required for batch processing.
+
+4. Click **"Process folder"** to begin batch processing.  
+   The software will:
+   - Prompt you to select the folder containing all videos to be tracked.
+   - Load the saved `manualROI.mat`.
+   - Automatically apply the same ROI setup to each video.
+   - Track fascicles using TimTrack and UltraTrack.
+   - Display results after completion.
+
 ## Additional information
 
 ### Fascicle definition
