@@ -410,7 +410,6 @@ function frame_slider_Callback(hObject, eventdata, handles)
 % Hints: get(hObject,'Value') returns position of slider
 %        get(hObject,'Min') and get(hObject,'Max') to determine range of slider
 
-
 % get the current value from the slider (round to ensure it is integer)
 frame_no = round(get(handles.frame_slider,'Value'));
 
@@ -457,29 +456,6 @@ function frame_number_CreateFcn(hObject, eventdata, handles)
 %       See ISPC and COMPUTER.
 if ispc && isequal(get(hObject,'BackgroundColor'), get(0,'defaultUicontrolBackgroundColor'))
     set(hObject,'BackgroundColor','white');
-end
-
-% -----------------------------------------------
-% -----------------------------------------------
-function goto_next_frame(hObject, handles)
-
-if get(handles.autorun_but,'BackgroundColor') == [0 1 0]
-    
-    % get the current value from the slider (round to ensure it is integer)
-    frame_no = round(get(handles.frame_slider,'Value'))+1;
-    
-    if frame_no < get(handles.frame_slider,'Max')
-        % set the slider
-        set(handles.frame_slider,'Value',frame_no);
-        % set the string in the frame_number box to the current frame value
-        set(handles.frame_number,'String',num2str(frame_no));
-    else  handles.run = 0;
-        set(handles.autorun_but,'BackgroundColor',[1 0 0]);
-    end
-    
-    % update the image axes using show_image function (bottom)
-    show_image(hObject,handles);
-    
 end
 
 % --- Executes on button press in clear_fascicle.
