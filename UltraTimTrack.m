@@ -337,256 +337,8 @@ function varargout = UltraTimTrack_OutputFcn(~, eventdata, handles)
 
 % Get default command line output from handles structure
 varargout{1} = handles.output;
-
-
-% --- Executes on button press in cut_frames_before.
-function cut_frames_before_Callback(hObject, eventdata, handles)
-% hObject    handle to cut_frames_before (see GCBO)
-% eventdata  reserved - to be defined in a future version of MATLAB
-% handles    structure with handles and user data (see GUIDATA)
-
-if isfield(handles,'movObj')||isfield(handles,'BIm')||isfield(handles,'ImStack')
-    
-    % reset start_frame to the current frame and adjust NumFrames
-    handles.UTT.start_frame = handles.UTT.start_frame + round(get(handles.frame_slider,'Value'));
-    handles.US.NumFrames = handles.US.NumFrames-handles.UTT.start_frame+1;
-
-    if ~handles.trackbck_chkBox.Value
-        handles.UTT.frame0 = handles.UTT.start_frame;
-    else
-        handles.UTT.frame0 = handles.UTT.start_frame + handles.US.NumFrames - 1;
-    end
-    
-    handles.US.Time = handles.US.Time(handles.UTT.start_frame:handles.UTT.start_frame + handles.US.NumFrames-1);
-    
-    set(handles.frame_slider,'Min',1);
-    set(handles.frame_slider,'Max',handles.US.NumFrames);
-    set(handles.frame_slider,'Value',1);
-    set(handles.frame_slider,'SliderStep',[1/handles.US.NumFrames 5/handles.US.NumFrames]);
-    
-    % set the string in the frame_number to 1
-    set(handles.frame_number,'String',1);
-    
-    % update the image axes using show_image function (bottom)
-    show_image(hObject,handles);
-end
-
-% --- Executes on button press in cut_frames_after.
-function cut_frames_after_Callback(hObject, eventdata, handles)
-% hObject    handle to cut_frames_after (see GCBO)
-% eventdata  reserved - to be defined in a future version of MATLAB
-% handles    structure with handles and user data (see GUIDATA)
-if isfield(handles,'movObj')||isfield(handles,'BIm')||isfield(handles,'ImStack')
-    frame_no = round(get(handles.frame_slider,'Value'));
-    
-    handles.US.NumFrames = frame_no;
-    
-    if ~handles.trackbck_chkBox.Value
-        handles.UTT.frame0 = handles.UTT.start_frame;
-        handles.UTT.direction = 1; % forward direction
-    else
-        handles.UTT.frame0 = handles.UTT.start_frame + handles.US.NumFrames - 1;
-        handles.UTT.direction = -1; % backward direction
-    end
-
-    set(handles.frame_slider,'Min',1);
-    set(handles.frame_slider,'Max',handles.US.NumFrames);
-    set(handles.frame_slider,'Value',handles.US.NumFrames);
-    set(handles.frame_slider,'SliderStep',[1/handles.US.NumFrames 5/handles.US.NumFrames]);
-    
-    % set the string in the frame_number to 1
-    set(handles.frame_number,'String',frame_no);
-    
-    % update the image axes using show_image function (bottom)
-    show_image(hObject,handles);
-end
-
-% --- Executes on slider movement.
-function frame_slider_Callback(hObject, eventdata, handles)
-% hObject    handle to frame_slider (see GCBO)
-% eventdata  reserved - to be defined in a future version of MATLAB
-% handles    structure with handles and user data (see GUIDATA)
-
-% Hints: get(hObject,'Value') returns position of slider
-%        get(hObject,'Min') and get(hObject,'Max') to determine range of slider
-
-% get the current value from the slider (round to ensure it is integer)
-frame_no = round(get(handles.frame_slider,'Value'));
-
-% set the string in the frame_number box to the current frame value
-set(handles.frame_number,'String',num2str(frame_no));
-
-% update the image axes using show_image function (bottom)
-show_image(hObject,handles);
-
-% --- Executes during object creation, after setting all properties.
-function frame_slider_CreateFcn(hObject, eventdata, handles)
-% hObject    handle to frame_slider (see GCBO)
-% eventdata  reserved - to be defined in a future version of MATLAB
-% handles    empty - handles not created until after all CreateFcns called
-
-% Hint: slider controls usually have a light gray background.
-
-if isequal(get(hObject,'BackgroundColor'), get(0,'defaultUicontrolBackgroundColor'))
-    set(hObject,'BackgroundColor',[.9 .9 .9]);
-end
-
-
-function frame_number_Callback(hObject, eventdata, handles)
-% hObject    handle to frame_number (see GCBO)
-% eventdata  reserved - to be defined in a future version of MATLAB
-% handles    structure with handles and user data (see GUIDATA)
-
-% Hints: get(hObject,'String') returns contents of frame_number as text
-%        str2double(get(hObject,'String')) returns contents of frame_number as a double
-
-frame_no = str2num(get(handles.frame_number,'String'));
-set(handles.frame_slider,'Value',round(frame_no));
-
-% update the image axes using show_image function (bottom)
-show_image(hObject,handles);
-
-% --- Executes during object creation, after setting all properties.
-function frame_number_CreateFcn(hObject, eventdata, handles)
-% hObject    handle to frame_number (see GCBO)
-% eventdata  reserved - to be defined in a future version of MATLAB
-% handles    empty - handles not created until after all CreateFcns called
-
-% Hint: edit controls usually have a white background on Windows.
-%       See ISPC and COMPUTER.
-if ispc && isequal(get(hObject,'BackgroundColor'), get(0,'defaultUicontrolBackgroundColor'))
-    set(hObject,'BackgroundColor','white');
-end
-
-% --- Executes on button press in clear_fascicle.
-function[handles] = clear_fascicle_Callback(hObject, eventdata, handles)
-% hObject    handle to clear_fascicle (see GCBO)
-% eventdata  reserved - to be defined in a future version of MATLAB
-% handles    structure with handles and user data (see GUIDATA)
-
-    handles = PreAllocate_Tracking(hObject, eventdata, handles);
-    
-    if isfield(handles.Region.Fascicle,'TT')
-        handles.Region.Fascicle = rmfield(handles.Region.Fascicle,'TT');
-    end
-    
-    % set current frame to 1
-    set(handles.frame_slider,'Value',1);
-    set(handles.frame_number,'String',1);
-    
-    cla(handles.length_plot); %clean fascicle length data
-    cla(handles.mat_plot);%clean fascicle angle data
-%     cla(handles.axes1); %clean image data
-    
-    recs = findobj(handles.axes1,'Type','images.roi.rectangle');
-
-    for i = 1:length(recs)
-        delete(recs(i));
-    end
-
-    % autocrop
-    handles = AutoCrop_Callback(hObject, eventdata, handles);
-
-    % add ROIs
-    handles.UTT.Bi = images.roi.Rectangle(handles.axes1,'position', handles.UTT.B,'color','yellow','FaceAlpha',0,'FaceSelectable',0,'Linewidth',1,'StripeColor','white');
-    handles.Region.S = images.roi.Rectangle(handles.axes1,'position', [1 handles.UTT.TT.parms.apo.super.cut(1)*handles.UTT.imHeight handles.UTT.imWidth diff(handles.UTT.TT.parms.apo.super.cut)*handles.UTT.imHeight] + [handles.UTT.Bi.Position(1) handles.UTT.Bi.Position(2) 0 0],'color','blue','FaceSelectable',0);
-    handles.Region.D = images.roi.Rectangle(handles.axes1,'position', [1 handles.UTT.TT.parms.apo.deep.cut(1)*handles.UTT.imHeight handles.UTT.imWidth diff(handles.UTT.TT.parms.apo.deep.cut)*handles.UTT.imHeight] + [handles.UTT.Bi.Position(1) handles.UTT.Bi.Position(2) 0 0],'color','green','FaceSelectable',0);
-
-
-    show_data(hObject,handles);
-    show_image(hObject,handles);
-    
-
-% --------------------------------------------------------------------
-function File_Callback(hObject, eventdata, handles)
-% hObject    handle to File (see GCBO)
-% eventdata  reserved - to be defined in a future version of MATLAB
-% handles    structure with handles and user data (see GUIDATA)
-
-
-% --------------------------------------------------------------------
-function Image_Callback(hObject, eventdata, handles)
-% hObject    handle to Image (see GCBO)
-% eventdata  reserved - to be defined in a future version of MATLAB
-% handles    structure with handles and user data (see GUIDATA)
-
-
-% --------------------------------------------------------------------
-function Tracking_Callback(hObject, eventdata, handles)
-% hObject    handle to Tracking (see GCBO)
-% eventdata  reserved - to be defined in a future version of MATLAB
-% handles    structure with handles and user data (see GUIDATA)
-
-
-% --------------------------------------------------------------------
-function Fascicle_Callback(hObject, eventdata, handles)
-% hObject    handle to Fascicle (see GCBO)
-% eventdata  reserved - to be defined in a future version of MATLAB
-% handles    structure with handles and user data (see GUIDATA)
-
-
-% --------------------------------------------------------------------
-function Settings_Callback(hObject, eventdata, handles)
-% hObject    handle to Settings (see GCBO)
-% eventdata  reserved - to be defined in a future version of MATLAB
-% handles    structure with handles and user data (see GUIDATA)
-
-
-% --------------------------------------------------------------------
-function save_settings_Callback(hObject, eventdata, handles)
-% hObject    handle to save_settings (see GCBO)
-% eventdata  reserved - to be defined in a future version of MATLAB
-% handles    structure with handles and user data (see GUIDATA)
-
-ImageDepth = handles.US.ID;
-% Needed for KL algorithm, but not KLT algorithm
-%Sigma = handles.SIGMA;
-%S_Step = handles.S_STEP;
-Position = get(gcf,'Position');
-Default_Directory = cd;
-
-[directory, ~, ~] = fileparts(mfilename('fullpath'));
-
-if ismac || isunix
-    save([directory '/ultrasound_tracking_settings.mat'], 'ImageDepth', ...
-        'Position', 'Default_Directory');
-end
-
-if ispc
-    save([directory '\ultrasound_tracking_settings.mat'], 'ImageDepth',...
-        'Position', 'Default_Directory');
-end
-
-msgbox('Settings saved')
-
-% --------------------------------------------------------------------
-function[handles] = menu_clear_tracking_Callback(hObject, eventdata, handles)
-% hObject    handle to menu_clear_tracking (see GCBO)
-% eventdata  reserved - to be defined in a future version of MATLAB
-% handles    structure with handles and user data (see GUIDATA)
-
-if isfield(handles,'ImStack')
-    
-    if isfield(handles,'Region')
-        handles = rmfield(handles,'Region');
-    end
  
-    % set current frame to 1
-    set(handles.frame_slider,'Value',1);
-    set(handles.frame_number,'String',1);
-    
-    % clear axes
-    cla(handles.length_plot)
-    cla(handles.mat_plot)
-    cla(handles.axes1) %clean image data
-    
-    % save .S and .D
-    show_image(hObject,handles);
-    
-    % Update handles structure
-    guidata(hObject, handles);
-    
-end
+
 
 % --------------------------------------------------------------------
 function[handles] = AutoCrop_Callback(hObject, eventdata, handles)
@@ -627,6 +379,7 @@ guidata(hObject, handles);
 % update the image axes using show_image function (bottom)
 show_image(hObject,handles);
 
+
 % --------------------------------------------------------------------
 function menu_crop_image_Callback(hObject, eventdata, handles)
 % hObject    handle to menu_crop_image (see GCBO)
@@ -665,6 +418,44 @@ if isfield(handles,'ImStack')
     guidata(hObject, handles);
     
 end
+
+% --- Executes on button press in clear_fascicle.
+function[handles] = clear_fascicle_Callback(hObject, eventdata, handles)
+% hObject    handle to clear_fascicle (see GCBO)
+% eventdata  reserved - to be defined in a future version of MATLAB
+% handles    structure with handles and user data (see GUIDATA)
+
+    handles = PreAllocate_Tracking(hObject, eventdata, handles);
+    
+    if isfield(handles.Region.Fascicle,'TT')
+        handles.Region.Fascicle = rmfield(handles.Region.Fascicle,'TT');
+    end
+    
+    % set current frame to 1
+    set(handles.frame_slider,'Value',1);
+    set(handles.frame_number,'String',1);
+    
+    cla(handles.length_plot); %clean fascicle length data
+    cla(handles.mat_plot);%clean fascicle angle data
+%     cla(handles.axes1); %clean image data
+    
+    recs = findobj(handles.axes1,'Type','images.roi.rectangle');
+
+    for i = 1:length(recs)
+        delete(recs(i));
+    end
+
+    % autocrop
+    handles = AutoCrop_Callback(hObject, eventdata, handles);
+
+    % add ROIs
+    handles.UTT.Bi = images.roi.Rectangle(handles.axes1,'position', handles.UTT.B,'color','yellow','FaceAlpha',0,'FaceSelectable',0,'Linewidth',1,'StripeColor','white');
+    handles.Region.S = images.roi.Rectangle(handles.axes1,'position', [1 handles.UTT.TT.parms.apo.super.cut(1)*handles.UTT.imHeight handles.UTT.imWidth diff(handles.UTT.TT.parms.apo.super.cut)*handles.UTT.imHeight] + [handles.UTT.Bi.Position(1) handles.UTT.Bi.Position(2) 0 0],'color','blue','FaceSelectable',0);
+    handles.Region.D = images.roi.Rectangle(handles.axes1,'position', [1 handles.UTT.TT.parms.apo.deep.cut(1)*handles.UTT.imHeight handles.UTT.imWidth diff(handles.UTT.TT.parms.apo.deep.cut)*handles.UTT.imHeight] + [handles.UTT.Bi.Position(1) handles.UTT.Bi.Position(2) 0 0],'color','green','FaceSelectable',0);
+
+
+    show_data(hObject,handles);
+    show_image(hObject,handles);
 
 % --------------------------------------------------------------------
 function menu_reset_image_Callback(hObject, eventdata, handles)
@@ -2292,22 +2083,6 @@ function [handles] = Auto_Detect_Callback(hObject, eventdata, handles)
     i = 1;
     j = 1;
     
-%     if isfield(handles.Region, 'S')
-%         if ~isvalid(handles.Region.S)
-%             handles.Region.S = images.roi.Rectangle(handles.axes1,'position', [1 handles.UTT.TT.parms.apo.super.cut(1)*handles.UTT.imHeight n diff(handles.UTT.TT.parms.apo.super.cut)*handles.UTT.imHeight] + [handles.UTT.Bi.Position(1) handles.UTT.Bi.Position(2) 0 0],'color','blue');
-%         end
-%     else
-%             handles.Region.S = images.roi.Rectangle(handles.axes1,'position', [1 handles.UTT.TT.parms.apo.super.cut(1)*handles.UTT.imHeight n diff(handles.UTT.TT.parms.apo.super.cut)*handles.UTT.imHeight] + [handles.UTT.Bi.Position(1) handles.UTT.Bi.Position(2) 0 0],'color','blue');
-%     end
-%     
-%     if isfield(handles.Region, 'D')
-%         if ~isvalid(handles.Region.D)
-%             handles.Region.D = images.roi.Rectangle(handles.axes1,'position', [1 handles.UTT.TT.parms.apo.deep.cut(1)*handles.UTT.imHeight n diff(handles.UTT.TT.parms.apo.deep.cut)*handles.UTT.imHeight] + [handles.UTT.Bi.Position(1) handles.UTT.Bi.Position(2) 0 0],'color','green');
-%         end
-%     else
-%        handles.Region.D = images.roi.Rectangle(handles.axes1,'position', [1 handles.UTT.TT.parms.apo.deep.cut(1)*handles.UTT.imHeight n diff(handles.UTT.TT.parms.apo.deep.cut)*handles.UTT.imHeight] + [handles.UTT.Bi.Position(1) handles.UTT.Bi.Position(2) 0 0],'color','green');
-%     end
-    
     %% Aponeurosis detection
     axes(handles.axes1);
     
@@ -3644,23 +3419,205 @@ handles.Region(i).Fascicle(j).manual.fas_ang = nan(handles.US.NumFrames,1);
 
 
 
+% --- Executes on button press in cut_frames_before.
+function cut_frames_before_Callback(hObject, eventdata, handles)
+% hObject    handle to cut_frames_before (see GCBO)
+% eventdata  reserved - to be defined in a future version of MATLAB
+% handles    structure with handles and user data (see GUIDATA)
+
+if isfield(handles,'movObj')||isfield(handles,'BIm')||isfield(handles,'ImStack')
+    
+    % reset start_frame to the current frame and adjust NumFrames
+    handles.UTT.start_frame = handles.UTT.start_frame + round(get(handles.frame_slider,'Value'));
+    handles.US.NumFrames = handles.US.NumFrames-handles.UTT.start_frame+1;
+
+    if ~handles.trackbck_chkBox.Value
+        handles.UTT.frame0 = handles.UTT.start_frame;
+    else
+        handles.UTT.frame0 = handles.UTT.start_frame + handles.US.NumFrames - 1;
+    end
+    
+    handles.US.Time = handles.US.Time(handles.UTT.start_frame:handles.UTT.start_frame + handles.US.NumFrames-1);
+    
+    set(handles.frame_slider,'Min',1);
+    set(handles.frame_slider,'Max',handles.US.NumFrames);
+    set(handles.frame_slider,'Value',1);
+    set(handles.frame_slider,'SliderStep',[1/handles.US.NumFrames 5/handles.US.NumFrames]);
+    
+    % set the string in the frame_number to 1
+    set(handles.frame_number,'String',1);
+    
+    % update the image axes using show_image function (bottom)
+    show_image(hObject,handles);
+end
+
+% --- Executes on button press in cut_frames_after.
+function cut_frames_after_Callback(hObject, eventdata, handles)
+% hObject    handle to cut_frames_after (see GCBO)
+% eventdata  reserved - to be defined in a future version of MATLAB
+% handles    structure with handles and user data (see GUIDATA)
+if isfield(handles,'movObj')||isfield(handles,'BIm')||isfield(handles,'ImStack')
+    frame_no = round(get(handles.frame_slider,'Value'));
+    
+    handles.US.NumFrames = frame_no;
+    
+    if ~handles.trackbck_chkBox.Value
+        handles.UTT.frame0 = handles.UTT.start_frame;
+        handles.UTT.direction = 1; % forward direction
+    else
+        handles.UTT.frame0 = handles.UTT.start_frame + handles.US.NumFrames - 1;
+        handles.UTT.direction = -1; % backward direction
+    end
+
+    set(handles.frame_slider,'Min',1);
+    set(handles.frame_slider,'Max',handles.US.NumFrames);
+    set(handles.frame_slider,'Value',handles.US.NumFrames);
+    set(handles.frame_slider,'SliderStep',[1/handles.US.NumFrames 5/handles.US.NumFrames]);
+    
+    % set the string in the frame_number to 1
+    set(handles.frame_number,'String',frame_no);
+    
+    % update the image axes using show_image function (bottom)
+    show_image(hObject,handles);
+end
+
+% --- Executes on slider movement.
+function frame_slider_Callback(hObject, eventdata, handles)
+% hObject    handle to frame_slider (see GCBO)
+% eventdata  reserved - to be defined in a future version of MATLAB
+% handles    structure with handles and user data (see GUIDATA)
+
+% Hints: get(hObject,'Value') returns position of slider
+%        get(hObject,'Min') and get(hObject,'Max') to determine range of slider
+
+% get the current value from the slider (round to ensure it is integer)
+frame_no = round(get(handles.frame_slider,'Value'));
+
+% set the string in the frame_number box to the current frame value
+set(handles.frame_number,'String',num2str(frame_no));
+
+% update the image axes using show_image function (bottom)
+show_image(hObject,handles);
+
+% --- Executes during object creation, after setting all properties.
+function frame_slider_CreateFcn(hObject, eventdata, handles)
+% hObject    handle to frame_slider (see GCBO)
+% eventdata  reserved - to be defined in a future version of MATLAB
+% handles    empty - handles not created until after all CreateFcns called
+
+% Hint: slider controls usually have a light gray background.
+
+if isequal(get(hObject,'BackgroundColor'), get(0,'defaultUicontrolBackgroundColor'))
+    set(hObject,'BackgroundColor',[.9 .9 .9]);
+end
 
 
+function frame_number_Callback(hObject, eventdata, handles)
+% hObject    handle to frame_number (see GCBO)
+% eventdata  reserved - to be defined in a future version of MATLAB
+% handles    structure with handles and user data (see GUIDATA)
+
+% Hints: get(hObject,'String') returns contents of frame_number as text
+%        str2double(get(hObject,'String')) returns contents of frame_number as a double
+
+frame_no = str2num(get(handles.frame_number,'String'));
+set(handles.frame_slider,'Value',round(frame_no));
+
+% update the image axes using show_image function (bottom)
+show_image(hObject,handles);
+
+% --- Executes during object creation, after setting all properties.
+function frame_number_CreateFcn(hObject, eventdata, handles)
+% hObject    handle to frame_number (see GCBO)
+% eventdata  reserved - to be defined in a future version of MATLAB
+% handles    empty - handles not created until after all CreateFcns called
+
+% Hint: edit controls usually have a white background on Windows.
+%       See ISPC and COMPUTER.
+if ispc && isequal(get(hObject,'BackgroundColor'), get(0,'defaultUicontrolBackgroundColor'))
+    set(hObject,'BackgroundColor','white');
+end
+
+% --------------------------------------------------------------------
+function File_Callback(hObject, eventdata, handles)
+% hObject    handle to File (see GCBO)
+% eventdata  reserved - to be defined in a future version of MATLAB
+% handles    structure with handles and user data (see GUIDATA)
 
 
+% --------------------------------------------------------------------
+function Image_Callback(hObject, eventdata, handles)
+% hObject    handle to Image (see GCBO)
+% eventdata  reserved - to be defined in a future version of MATLAB
+% handles    structure with handles and user data (see GUIDATA)
 
 
+% --------------------------------------------------------------------
+function Tracking_Callback(hObject, eventdata, handles)
+% hObject    handle to Tracking (see GCBO)
+% eventdata  reserved - to be defined in a future version of MATLAB
+% handles    structure with handles and user data (see GUIDATA)
 
 
+% --------------------------------------------------------------------
+function Fascicle_Callback(hObject, eventdata, handles)
+% hObject    handle to Fascicle (see GCBO)
+% eventdata  reserved - to be defined in a future version of MATLAB
+% handles    structure with handles and user data (see GUIDATA)
 
 
+% --------------------------------------------------------------------
+function Settings_Callback(hObject, eventdata, handles)
+% hObject    handle to Settings (see GCBO)
+% eventdata  reserved - to be defined in a future version of MATLAB
+% handles    structure with handles and user data (see GUIDATA)
 
 
+% --------------------------------------------------------------------
+function save_settings_Callback(hObject, eventdata, handles)
+% hObject    handle to save_settings (see GCBO)
+% eventdata  reserved - to be defined in a future version of MATLAB
+% handles    structure with handles and user data (see GUIDATA)
 
+ImageDepth = handles.US.ID;
+Position = get(gcf,'Position');
+Default_Directory = cd;
 
+[directory, ~, ~] = fileparts(mfilename('fullpath'));
 
+save(fullfile(directory, 'ultrasound_tracking_settings.mat'), 'ImageDepth', ...
+    'Position', 'Default_Directory');
 
+msgbox('Settings saved')
 
+% --------------------------------------------------------------------
+function[handles] = menu_clear_tracking_Callback(hObject, eventdata, handles)
+% hObject    handle to menu_clear_tracking (see GCBO)
+% eventdata  reserved - to be defined in a future version of MATLAB
+% handles    structure with handles and user data (see GUIDATA)
+
+if isfield(handles,'ImStack')
+    
+    if isfield(handles,'Region')
+        handles = rmfield(handles,'Region');
+    end
+ 
+    % set current frame to 1
+    set(handles.frame_slider,'Value',1);
+    set(handles.frame_number,'String',1);
+    
+    % clear axes
+    cla(handles.length_plot)
+    cla(handles.mat_plot)
+    cla(handles.axes1) %clean image data
+    
+    % save .S and .D
+    show_image(hObject,handles);
+    
+    % Update handles structure
+    guidata(hObject, handles);
+    
+end
 
 
 
