@@ -53,63 +53,39 @@ function UltraTimTrack_OpeningFcn(hObject, eventdata, handles, varargin)
 % Check if Parallel Computing Toolbox is installed
 % chkParallelToolBox(); %if exists it runs infinitely till Ultratimtrack is closed
 
+% do some checking to make sure the required toolboxes are available
+version = ver;
+
+ava_tbs = cell(1,length(version));
+for j = 1:length(version)
+    ava_tbs{j} = version(j).Name;
+end
+
+req_tbs = {'Computer Vision Toolbox','Image Processing Toolbox', 'Parallel Computing Toolbox', 'Parallel Computing Toolbox'};
+for j = 1:length(req_tbs)
+    if ~sum(contains(ava_tbs,req_tbs{j}))
+        warning(['This application requires the ', req_tbs{j}, ' to be installed. You may try to proceed without it, but parts of the algorithm may not work.'])
+    end
+end
+
 % Choose default command line output for UltraTimTrack
 handles.output = hObject;
 
 %add automatically all files and subfolders dynamically
-filename = [mfilename,'.m'];
-fullpath = which(filename);
-mainfoldername = erase(fullpath,filename);
-addpath(genpath(mainfoldername));
-
-load('TimTrack_parms.mat','parms')
-handles.UTT.TT.parms = parms;
-
-handles.UTT.UT.BlockSize = [21 71]; %initialize it
-% check to make sure there is a settings mat-file present, if not then make
-% one in the directory where the m-file sits.
 [program_directory, ~, ~] = fileparts(mfilename('fullpath'));
+addpath(genpath(program_directory));
 
-if ismac || isunix
-    if isempty(dir([program_directory '/ultrasound_tracking_settings.mat']))
-        ImageDepth = 50.7;
-        % Needed for KL algorithm, but not KLT algorithm
-        %Sigma = 3;
-        %S_Step = 3;
-        Position = get(gcf,'Position');
-        Default_Directory = cd;
-        save([program_directory '/ultrasound_tracking_settings.mat'], 'ImageDepth',...
-            'Position', 'Default_Directory');
-    else
-        load ultrasound_tracking_settings.mat
-    end
-end
-%
-if ispc
-    if isempty(dir([program_directory '\ultrasound_tracking_settings.mat']))
-        ImageDepth = 50.7;
-        % Needed for KL algorithm, but not KLT algorithm
-        %Sigma = 3;
-        %S_Step = 3;
-        Position = get(gcf,'Position');
-        Default_Directory = cd;
-        save([program_directory '\ultrasound_tracking_settings.mat'], 'ImageDepth',...
-            'Position', 'Default_Directory');
-    else
-        load ultrasound_tracking_settings.mat
-    end
-    
-end
+% load some setting
+load('TimTrack_parms.mat','parms')
+load('ultrasound_tracking_settings.mat', 'ImageDepth', 'Position');
 
-% load the settings mat-file and set default settings
+handles.UTT.TT.parms = parms;
+handles.UTT.UT.BlockSize = [21 71]; %initialize it
 handles.US.ID = ImageDepth;
+
 set(handles.ImDepthEdit,'String',num2str(ImageDepth));
-% Needed for KL algorithm, but not KLT algorithm
-%handles.SIGMA = Sigma;
-%handles.S_STEP = S_Step;
 set(0,'RecursionLimit',3000)
 set(gcf,'DoubleBuffer','on','Position',Position);
-%cd(Default_Directory)
 
 % Update handles structure
 guidata(hObject, handles);
@@ -131,54 +107,25 @@ for j = 1:length(rfields)
     end
 end
 
-% do some checking to make sure the required toolboxes are available
-version = ver;
-
-ava_tbs = cell(1,length(version));
-for j = 1:length(version)
-    ava_tbs{j} = version(j).Name;
+%determine the available video formats
+reader = 'VideoReader';
+file_formats = eval([reader '.getFileFormats']);
+format_list{1,1} = [];
+format_list{1,2} = 'All Video Files (';
+for i = 1:length(file_formats)
+    format_list{1,1} = [format_list{1,1} '*.' file_formats(i).get.Extension ';'];
+    format_list{1,2} = [format_list{1,2} file_formats(i).get.Description ', '];
+    format_list{i+1,1} = ['*.' file_formats(i).get.Extension];
+    format_list{i+1,2} = ['*.' file_formats(i).get.Extension ' - ' file_formats(i).get.Description];
 end
 
-req_tbs = {'Computer Vision Toolbox','Image Processing Toolbox', 'Parallel Computing Toolbox', 'Parallel Computing Toolbox'};
-for j = 1:length(req_tbs)
-    if ~sum(contains(ava_tbs,req_tbs{j}))
-        warning(['This application requires the ', req_tbs{j}, ' to be installed. You may try to proceed without it, but parts of the algorithm may not work.'])
-    end
-end
+format_list{1,2} = [format_list{1,2}(1:end-2) ')'];
 
-% determine the release date and use the appropriate file loading function
-% newer versions > 2010b use VideoReader, older versions use mmreader
-if datenum(version(1).Date) >= 734353
-    reader = 'VideoReader';
-else
-    reader = 'mmreader';
-end
+newlist = strcat(format_list{1,1},'*.b32;*.b8;*.mat;*.jpg;*.png;*.bmp;*.jpeg;*.tiff');% add some options that we can use
 
-% if post 2010a version of Matlab then look at the available video formats
-% for the list
-if datenum(version(1).Date) >= 734202
-    %determine the available video formats
-    file_formats = eval([reader '.getFileFormats']);
-    format_list{1,1} = [];
-    format_list{1,2} = 'All Video Files (';
-    for i = 1:length(file_formats)
-        format_list{1,1} = [format_list{1,1} '*.' file_formats(i).get.Extension ';'];
-        format_list{1,2} = [format_list{1,2} file_formats(i).get.Description ', '];
-        format_list{i+1,1} = ['*.' file_formats(i).get.Extension];
-        format_list{i+1,2} = ['*.' file_formats(i).get.Extension ' - ' file_formats(i).get.Description];
-    end
+%load the avi file
+[handles.US.fname, handles.US.pname] = uigetfile(newlist, 'Pick a movie file');
     
-    format_list{1,2} = [format_list{1,2}(1:end-2) ')'];
-    
-    newlist = strcat(format_list{1,1},'*.b32;*.b8;*.mat;*.jpg;*.png;*.bmp;*.jpeg;*.tiff');% add some options that we can use
-    
-    %load the avi file
-    [handles.US.fname, handles.US.pname] = uigetfile(newlist, 'Pick a movie file');
-    
-else % pre 2010a mmreader function cannot use the getFileFormats method so only allow AVI files to be selected
-    [handles.US.fname, handles.US.pname] = uigetfile('*.avi', 'Pick a movie file');
-end
-
 if isequal(handles.US.fname,0) || isequal(handles.US.pname,0)
     return;
 end
@@ -220,7 +167,6 @@ elseif strcmp(Ext,'.png') || strcmp(Ext,'.jpg') || strcmp(Ext,'.bmp') || strcmp(
         img = imgRGB;
     end
     
-    
     handles.ImStack = repmat(img, 1, 1, 2);
     handles.US.vidHeight = size(handles.ImStack,1);
     handles.US.vidWidth = size(handles.ImStack,2);
@@ -231,57 +177,33 @@ elseif strcmp(Ext,'.png') || strcmp(Ext,'.jpg') || strcmp(Ext,'.bmp') || strcmp(
     
     handles.TimTrack_mode.Value = 1;
     
-else
-    
-    switch reader
- 
-        case 'VideoReader'
-            
-            handles.movObj = VideoReader([handles.US.pname handles.US.fname]);
-            
-            % get info
-            handles.US.vidHeight = handles.movObj.Height;
-            handles.US.vidWidth = handles.movObj.Width;
-            handles.US.NumFrames = handles.movObj.NumFrames;
-            handles.US.FrameRate = handles.movObj.FrameRate;
-            
-            i=1;
-            handles.ImStack     = zeros(handles.US.vidHeight, handles.US.vidWidth, handles.US.NumFrames,'uint8');
-            
-            while hasFrame(handles.movObj)
-                waitbar(handles.movObj.CurrentTime/handles.movObj.Duration,mb)
-                if regexp(handles.movObj.VideoFormat,'RGB')
-                    handles.ImStack(:,:,i) = im2gray(readFrame(handles.movObj));
-                else
-                    handles.ImStack(:,:,i) = readFrame(handles.movObj);
-                end
+else % video file
                 
-                handles.US.ImBrightness(i) = mean(handles.ImStack(:,:,i),'all');
-                i=i+1;
-            end
-            
-            
-        case 'mmreader' % pre R2010b uses mmreader
-            handles.movObj = eval([reader '([handles.US.pname handles.US.fname])']);
-            handles.US.NumFrames = handles.movObj.NumberOfFrames;
-            handles.US.vidHeight = handles.movObj.Height;
-            handles.US.vidWidth = handles.movObj.Width;
-            handles.US.FrameRate = handles.movObj.NumberOfFrames/handles.movObj.Duration;
-            
-            for i = 1:handles.US.NumFrames
-                cdata = read(handles.movObj,i);
-                waitbar(i/handles.US.NumFrames,mb)
-                % create image from movie frame
-                if regexp(handles.movObj.VideoFormat,'RGB')
-                    handles.ImStack(:,:,i) = rgb2gray(cdata);
-                else
-                    handles.ImStack(:,:,i) = cdata;
-                end
-                clear cdata
-            end
-            
+    handles.movObj = VideoReader([handles.US.pname handles.US.fname]);
+
+    % get info
+    handles.US.vidHeight = handles.movObj.Height;
+    handles.US.vidWidth = handles.movObj.Width;
+    handles.US.NumFrames = handles.movObj.NumFrames;
+    handles.US.FrameRate = handles.movObj.FrameRate;
+
+    i=1;
+    handles.ImStack     = zeros(handles.US.vidHeight, handles.US.vidWidth, handles.US.NumFrames,'uint8');
+
+    % read frame by frame
+    while hasFrame(handles.movObj)
+        waitbar(handles.movObj.CurrentTime/handles.movObj.Duration,mb)
+        
+        if regexp(handles.movObj.VideoFormat,'RGB')
+            handles.ImStack(:,:,i) = im2gray(readFrame(handles.movObj));
+        else
+            handles.ImStack(:,:,i) = readFrame(handles.movObj);
+        end
+
+        handles.US.ImBrightness(i) = mean(handles.ImStack(:,:,i),'all');
+        i=i+1;
     end
-    
+
 end
 
 % check whether a mat file exists in the location with the same name with
@@ -373,6 +295,15 @@ recs = findobj(handles.axes1,'Type','images.roi.rectangle');
 for i = 1:length(recs)
     delete(recs(i));
 end
+
+% display the image
+frame_no = round(get(handles.frame_slider,'Value')) + handles.UTT.start_frame - 1;
+Im = handles.ImStack(:,:,frame_no);
+axes(handles.axes1)
+handles.image = image(Im);
+colormap(gray(256));
+axis off;
+axis equal
 
 % autocrop
 handles = AutoCrop_Callback(hObject, eventdata, handles);
