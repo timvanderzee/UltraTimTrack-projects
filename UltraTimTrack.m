@@ -368,8 +368,25 @@ if isfield(handles.Region.Fascicle,'TT')
     handles.Region.Fascicle = rmfield(handles.Region.Fascicle,'TT');
 end
 
+recs = findobj(handles.axes1,'Type','images.roi.rectangle');
+
+for i = 1:length(recs)
+    delete(recs(i));
+end
+
 % autocrop
 handles = AutoCrop_Callback(hObject, eventdata, handles);
+
+% add ROIs
+% create region rectangles if they don't exist yet
+if ~isfield(handles.UTT,'Bi') || ~isvalid(handles.UTT.Bi)
+    handles.UTT.Bi = images.roi.Rectangle(handles.axes1,'position', handles.UTT.B,'color','yellow','FaceAlpha',0,'FaceSelectable',0,'Linewidth',1,'StripeColor','white');
+end
+
+if ~isfield(handles.Region, 'S')
+    handles.Region.S = images.roi.Rectangle(handles.axes1,'position', [1 handles.UTT.TT.parms.apo.super.cut(1)*handles.UTT.imHeight handles.UTT.imWidth diff(handles.UTT.TT.parms.apo.super.cut)*handles.UTT.imHeight] + [handles.UTT.Bi.Position(1) handles.UTT.Bi.Position(2) 0 0],'color','blue','FaceSelectable',0);
+    handles.Region.D = images.roi.Rectangle(handles.axes1,'position', [1 handles.UTT.TT.parms.apo.deep.cut(1)*handles.UTT.imHeight handles.UTT.imWidth diff(handles.UTT.TT.parms.apo.deep.cut)*handles.UTT.imHeight] + [handles.UTT.Bi.Position(1) handles.UTT.Bi.Position(2) 0 0],'color','green','FaceSelectable',0);
+end
 
 if handles.flipimage.Value == 1 %check based on flip tick box value
     handles = do_flip(hObject, eventdata, handles);
@@ -552,8 +569,23 @@ function[handles] = clear_fascicle_Callback(hObject, eventdata, handles)
     
     cla(handles.length_plot); %clean fascicle length data
     cla(handles.mat_plot);%clean fascicle angle data
-    cla(handles.axes1); %clean image data
+%     cla(handles.axes1); %clean image data
     
+    recs = findobj(handles.axes1,'Type','images.roi.rectangle');
+
+    for i = 1:length(recs)
+        delete(recs(i));
+    end
+
+    % autocrop
+    handles = AutoCrop_Callback(hObject, eventdata, handles);
+
+    % add ROIs
+    handles.UTT.Bi = images.roi.Rectangle(handles.axes1,'position', handles.UTT.B,'color','yellow','FaceAlpha',0,'FaceSelectable',0,'Linewidth',1,'StripeColor','white');
+    handles.Region.S = images.roi.Rectangle(handles.axes1,'position', [1 handles.UTT.TT.parms.apo.super.cut(1)*handles.UTT.imHeight handles.UTT.imWidth diff(handles.UTT.TT.parms.apo.super.cut)*handles.UTT.imHeight] + [handles.UTT.Bi.Position(1) handles.UTT.Bi.Position(2) 0 0],'color','blue','FaceSelectable',0);
+    handles.Region.D = images.roi.Rectangle(handles.axes1,'position', [1 handles.UTT.TT.parms.apo.deep.cut(1)*handles.UTT.imHeight handles.UTT.imWidth diff(handles.UTT.TT.parms.apo.deep.cut)*handles.UTT.imHeight] + [handles.UTT.Bi.Position(1) handles.UTT.Bi.Position(2) 0 0],'color','green','FaceSelectable',0);
+
+
     show_data(hObject,handles);
     show_image(hObject,handles);
     
@@ -642,7 +674,7 @@ if isfield(handles,'ImStack')
     cla(handles.axes1) %clean image data
     
     % save .S and .D
-    handles = show_image(hObject,handles);
+    show_image(hObject,handles);
     
     % Update handles structure
     guidata(hObject, handles);
@@ -672,16 +704,6 @@ boundingBoxes = cat(1, stats.BoundingBox);
 % remove Bi
 if isfield(handles.UTT, 'Bi')
     handles.UTT = rmfield(handles.UTT, 'Bi');
-end
-
-if isfield(handles, 'Region')
-    if isfield(handles.Region, 'S')
-        handles.Region.S = rmfield(handles.Region, 'S');
-    end
-
-    if isfield(handles.Region, 'D')
-        handles.Region.D = rmfield(handles.Region, 'D');
-    end
 end
 
 % calculate the overall bounding box that encompasses all smaller bounding boxes.
@@ -1154,7 +1176,7 @@ for f = frame_no:end_frame
         set(handles.frame_number,'String',num2str(f));
         
         % update image
-        handles = show_image(hObject,handles);
+        show_image(hObject,handles);
         drawnow
     end
 end
@@ -1339,6 +1361,7 @@ else
     ylabel('');
 end
 
+
 %---------------------------------------------------------
 % Function to show image with appropriate image processing
 %---------------------------------------------------------
@@ -1351,11 +1374,6 @@ if isfield(handles,'ImStack')
     
     i = 1;
     j = 1;
-    
-    % update the B region if Bi exists
-    if isfield(handles.UTT, 'Bi')
-        handles.UTT.B = handles.UTT.Bi.Position;
-    end
 
     % extract locations to be plotted
     fasx = handles.Region(i).Fascicle(j).fas_x{frame_no} + handles.UTT.B(1);
@@ -1421,15 +1439,15 @@ if isfield(handles,'ImStack')
         set(handles.image, 'CData',Im);  % if it did exist yet
     end
 
-    % create region rectangles if they don't exist yet
-    if ~isfield(handles.UTT,'Bi') || ~isvalid(handles.UTT.Bi)
-        handles.UTT.Bi = images.roi.Rectangle(handles.axes1,'position', handles.UTT.B,'color','yellow','FaceAlpha',0,'FaceSelectable',0,'Linewidth',1,'StripeColor','white');
-    end
-
-    if ~isfield(handles.Region, 'S')
-        handles.Region.S = images.roi.Rectangle(handles.axes1,'position', [1 handles.UTT.TT.parms.apo.super.cut(1)*handles.UTT.imHeight handles.UTT.imWidth diff(handles.UTT.TT.parms.apo.super.cut)*handles.UTT.imHeight] + [handles.UTT.Bi.Position(1) handles.UTT.Bi.Position(2) 0 0],'color','blue','FaceSelectable',0);
-        handles.Region.D = images.roi.Rectangle(handles.axes1,'position', [1 handles.UTT.TT.parms.apo.deep.cut(1)*handles.UTT.imHeight handles.UTT.imWidth diff(handles.UTT.TT.parms.apo.deep.cut)*handles.UTT.imHeight] + [handles.UTT.Bi.Position(1) handles.UTT.Bi.Position(2) 0 0],'color','green','FaceSelectable',0);
-    end
+%     % create region rectangles if they don't exist yet
+%     if ~isfield(handles.UTT,'Bi') || ~isvalid(handles.UTT.Bi)
+%         handles.UTT.Bi = images.roi.Rectangle(handles.axes1,'position', handles.UTT.B,'color','yellow','FaceAlpha',0,'FaceSelectable',0,'Linewidth',1,'StripeColor','white');
+%     end
+% 
+%     if ~isfield(handles.Region, 'S')
+%         handles.Region.S = images.roi.Rectangle(handles.axes1,'position', [1 handles.UTT.TT.parms.apo.super.cut(1)*handles.UTT.imHeight handles.UTT.imWidth diff(handles.UTT.TT.parms.apo.super.cut)*handles.UTT.imHeight] + [handles.UTT.Bi.Position(1) handles.UTT.Bi.Position(2) 0 0],'color','blue','FaceSelectable',0);
+%         handles.Region.D = images.roi.Rectangle(handles.axes1,'position', [1 handles.UTT.TT.parms.apo.deep.cut(1)*handles.UTT.imHeight handles.UTT.imWidth diff(handles.UTT.TT.parms.apo.deep.cut)*handles.UTT.imHeight] + [handles.UTT.Bi.Position(1) handles.UTT.Bi.Position(2) 0 0],'color','green','FaceSelectable',0);
+%     end
     
     % flip things back if needed
     if handles.flipimage.Value
@@ -2367,21 +2385,21 @@ function [handles] = Auto_Detect_Callback(hObject, eventdata, handles)
     i = 1;
     j = 1;
     
-    if isfield(handles.Region, 'S')
-        if ~isvalid(handles.Region.S)
-            handles.Region.S = images.roi.Rectangle(handles.axes1,'position', [1 handles.UTT.TT.parms.apo.super.cut(1)*handles.UTT.imHeight n diff(handles.UTT.TT.parms.apo.super.cut)*handles.UTT.imHeight] + [handles.UTT.Bi.Position(1) handles.UTT.Bi.Position(2) 0 0],'color','blue');
-        end
-    else
-            handles.Region.S = images.roi.Rectangle(handles.axes1,'position', [1 handles.UTT.TT.parms.apo.super.cut(1)*handles.UTT.imHeight n diff(handles.UTT.TT.parms.apo.super.cut)*handles.UTT.imHeight] + [handles.UTT.Bi.Position(1) handles.UTT.Bi.Position(2) 0 0],'color','blue');
-    end
-    
-    if isfield(handles.Region, 'D')
-        if ~isvalid(handles.Region.D)
-            handles.Region.D = images.roi.Rectangle(handles.axes1,'position', [1 handles.UTT.TT.parms.apo.deep.cut(1)*handles.UTT.imHeight n diff(handles.UTT.TT.parms.apo.deep.cut)*handles.UTT.imHeight] + [handles.UTT.Bi.Position(1) handles.UTT.Bi.Position(2) 0 0],'color','green');
-        end
-    else
-       handles.Region.D = images.roi.Rectangle(handles.axes1,'position', [1 handles.UTT.TT.parms.apo.deep.cut(1)*handles.UTT.imHeight n diff(handles.UTT.TT.parms.apo.deep.cut)*handles.UTT.imHeight] + [handles.UTT.Bi.Position(1) handles.UTT.Bi.Position(2) 0 0],'color','green');
-    end
+%     if isfield(handles.Region, 'S')
+%         if ~isvalid(handles.Region.S)
+%             handles.Region.S = images.roi.Rectangle(handles.axes1,'position', [1 handles.UTT.TT.parms.apo.super.cut(1)*handles.UTT.imHeight n diff(handles.UTT.TT.parms.apo.super.cut)*handles.UTT.imHeight] + [handles.UTT.Bi.Position(1) handles.UTT.Bi.Position(2) 0 0],'color','blue');
+%         end
+%     else
+%             handles.Region.S = images.roi.Rectangle(handles.axes1,'position', [1 handles.UTT.TT.parms.apo.super.cut(1)*handles.UTT.imHeight n diff(handles.UTT.TT.parms.apo.super.cut)*handles.UTT.imHeight] + [handles.UTT.Bi.Position(1) handles.UTT.Bi.Position(2) 0 0],'color','blue');
+%     end
+%     
+%     if isfield(handles.Region, 'D')
+%         if ~isvalid(handles.Region.D)
+%             handles.Region.D = images.roi.Rectangle(handles.axes1,'position', [1 handles.UTT.TT.parms.apo.deep.cut(1)*handles.UTT.imHeight n diff(handles.UTT.TT.parms.apo.deep.cut)*handles.UTT.imHeight] + [handles.UTT.Bi.Position(1) handles.UTT.Bi.Position(2) 0 0],'color','green');
+%         end
+%     else
+%        handles.Region.D = images.roi.Rectangle(handles.axes1,'position', [1 handles.UTT.TT.parms.apo.deep.cut(1)*handles.UTT.imHeight n diff(handles.UTT.TT.parms.apo.deep.cut)*handles.UTT.imHeight] + [handles.UTT.Bi.Position(1) handles.UTT.Bi.Position(2) 0 0],'color','green');
+%     end
     
     %% Aponeurosis detection
     axes(handles.axes1);
@@ -2747,7 +2765,7 @@ for k = 1:numel(files) %foreach file
     set(handles.frame_number,'String',num2str(frame_no));
 
     % show the new video
-    handles = show_image(hObject,handles);
+    show_image(hObject,handles);
     
     %load fascicle automatically if exists
     if exist([path '/Fas_Data/Fas_' name '.mat'],'file')
@@ -3704,8 +3722,6 @@ for f = 1:handles.US.NumFrames
     
     handles.Region(i).Fascicle(j).fas_x_manual{f} = nan(2,1);
     handles.Region(i).Fascicle(j).fas_y_manual{f} = nan(2,1);
-   
-
     
 end
 
