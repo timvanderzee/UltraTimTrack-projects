@@ -1072,7 +1072,11 @@ if isfield(handles,'ImStack')
     
     i = 1;
     j = 1;
-
+    
+    if isfield(handles.UTT, 'Bi')
+        handles.UTT.B = get(handles.UTT.Bi,'position');
+    end
+    
     % extract locations to be plotted
     fasx = handles.Region(i).Fascicle(j).fas_x{frame_no} + handles.UTT.B(1);
     fasy = handles.Region(i).Fascicle(j).fas_y{frame_no} + handles.UTT.B(2);
@@ -1240,7 +1244,8 @@ parms.extrapolation = 1;
 n = handles.UTT.imWidth;
 
 if isfield(handles,'ImStack')
-    B = round(handles.UTT.Bi.Position);
+    B = [1 handles.UTT.Bi.Position(2) handles.UTT.imWidth handles.UTT.Bi.Position(4)];
+
     Im = handles.ImStack(B(2):(B(2)+B(4)-1), B(1):(B(1)+B(3)-1),:);
     im2 = imresize(Im, 1/handles.UTT.TT.imresize_fac);
     
@@ -1388,7 +1393,7 @@ for i = 1:length(handles.Region)
         fprev = f - handles.UTT.direction;
 
         % extract image
-        B = round(handles.UTT.Bi.Position);
+        B = [1 handles.UTT.Bi.Position(2) handles.UTT.imWidth handles.UTT.Bi.Position(4)];
         im = handles.ImStack(B(2):(B(2)+B(4)-1), B(1):(B(1)+B(3)-1),f);
 
         % get masked image
@@ -2096,7 +2101,7 @@ function [handles] = Auto_Detect_Callback(hObject, eventdata, handles)
     frame_no = handles.UTT.start_frame + round(get(handles.frame_slider,'Value')) - 1;
     
     % % detect orientation
-    B = round(handles.UTT.Bi.Position);
+    B = [1 handles.UTT.Bi.Position(2) handles.UTT.imWidth handles.UTT.Bi.Position(4)];
     Im = handles.ImStack(B(2):(B(2)+B(4)-1), B(1):(B(1)+B(3)-1),frame_no);
     data = imresize(Im, 1/handles.UTT.TT.imresize_fac);
     
@@ -2484,8 +2489,6 @@ function freq_lpf_Callback(hObject, eventdata, handles)
 %        str2double(get(hObject,'String')) returns contents of freq_lpf as a double
 
 handles.UTT.KF.fc_lpf = str2double(get(hObject,'String'));
-i = 1;
-j = 1;
 
 % Update handles structure
 guidata(hObject, handles);
@@ -2521,9 +2524,6 @@ function X_value_Callback(hObject, eventdata, handles)
 %        str2double(get(hObject,'String')) returns contents of X_value as a double
 
 handles.UTT.KF.X = str2double(get(hObject,'String'));
-
-i = 1;
-j = 1;
 
 % If we have estimates, run state estimation
 if isfield(handles, 'Region')
