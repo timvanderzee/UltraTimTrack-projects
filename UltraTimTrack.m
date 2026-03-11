@@ -996,7 +996,7 @@ handles.US.ID = str2double(get(handles.ImDepthEdit,'String'));
 
 for i = 1:length(handles.Region)
     if isfield(handles.Region(i),'Fascicle')
-        if isfield(handles.Region(i),'fas_length')
+        if isfield(handles.Region(i).Fascicle.UTT,'fas_length')
             
             if ~isempty(handles.Region(i).Fascicle.UTT.fas_length)
                 FL = handles.Region(i).Fascicle.UTT.fas_length;
