@@ -2382,7 +2382,7 @@ for k = 1:numel(files) %foreach file
     handles = process_all_Callback(hObject, eventdata, handles);
     
     % save
-    save_video_Callback(hObject, eventdata, handles)
+%     save_video_Callback(hObject, eventdata, handles)
     Save_As_Mat_Callback(hObject, eventdata, handles)
     
 end
