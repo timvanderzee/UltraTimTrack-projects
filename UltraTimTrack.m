@@ -540,10 +540,10 @@ if isfield(handles,'ImStack')
             set(handles.Region.D, 'EdgeAlpha',1,'FaceAlpha',0.2,'InteractionsAllowed','all')
             return
         else
-            load([pname fname],'Fdat');
+            load([pname fname],'Fdat', 'TrackingData');
         end
     else
-        load(fileFas,'Fdat');
+        load(fileFas,'Fdat', 'TrackingData');
     end
     
     %just be sure such necessary data exists
@@ -563,8 +563,10 @@ if isfield(handles,'ImStack')
                 handles.Region(i).deep_x{frame_no} = Fdat.Region(i).deep_x{1};
                 handles.Region(i).deep_y{frame_no} = Fdat.Region(i).deep_y{1};
                 
-                handles.Region(i).UT.ROIx{frame_no} = Fdat.Region(i).ROIx{1};
-                handles.Region(i).UT.ROIy{frame_no} = Fdat.Region(i).ROIy{1};
+                handles.Region(i).UT.ROIx{frame_no} = Fdat.Region(i).UT.ROIx{1};
+                handles.Region(i).UT.ROIy{frame_no} = Fdat.Region(i).UT.ROIy{1};
+                
+                handles.UTT = TrackingData.UTT;
                 
                 handles = calc_fascicle_length_and_pennation(handles,frame_no);
                 
@@ -813,6 +815,7 @@ if isfield(handles,'Region')
                 Fdat.Frequency = handles.Frequency;
             end
                      
+            TrackingData.UTT = handles.UTT;
             Fdat.Region(i) = handles.Region(i);
             Fdat.Region(i).FL = handles.Region(i).Fascicle.UTT.fas_length(nz,:)';
             Fdat.Region(i).PEN = handles.Region(i).Fascicle.UTT.fas_pen(nz,:)';
@@ -923,7 +926,9 @@ handles.UTT.start_frame = TrackingData.start_frame;
 handles.US.NumFrames = TrackingData.NumFrames;
 handles.Region.S = TrackingData.S;
 handles.Region.D = TrackingData.D;
-handles.Region.Fascicle.TT.geofeatures = Fdat.geofeatures;
+handles.UTT = TrackingData.UTT;
+
+handles.Region.Fascicle.TT.geofeatures = Fdat.Region.Fascicle.TT.geofeatures;
 set(handles.frame_slider,'Min',1);
 set(handles.frame_slider,'Max',handles.US.NumFrames);
 set(handles.frame_slider,'Value',1);
@@ -1531,10 +1536,10 @@ for i = 1:length(handles.Region)
                 handles = calc_fascicle_length_and_pennation(handles,f);
                 
                 % update the points
-                fpoints = fpointsNew;
+%                 fpoints = fpointsNew;
                 
                 % if drops below 100, define new points
-                if length(fpoints) < 100 || ~strcmp(handles.UTT.UT.ROItype(1:5), 'Hough')
+%                 if length(fpoints) < 100 || ~strcmp(handles.UTT.UT.ROItype(1:5), 'Hough')
                     
                     % detect points
                     fpoints = detectMinEigenFeatures(I_fmasked,'FilterSize',11, 'MinQuality', 0.005);
@@ -1544,7 +1549,7 @@ for i = 1:length(handles.Region)
                     end
                     
                     fpoints = double(fpoints.Location);
-                end
+%                 end
                 
                 % points must be in ROI
                 inPoints = inpolygon(fpoints(:,1),fpoints(:,2), ROIx, ROIy);
@@ -3515,7 +3520,7 @@ if isfield(handles,'ImStack')
     cla(handles.axes1) %clean image data
     
     % save .S and .D
-    show_image(hObject,handles);
+%     show_image(hObject,handles);
     
     % Update handles structure
     guidata(hObject, handles);
