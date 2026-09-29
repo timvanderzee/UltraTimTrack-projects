@@ -1442,13 +1442,13 @@ for i = 1:length(handles.Region)
                 end
 
                 % get location
-                allfpoints(:,:,f) = double(faspoints.Location);
+                points(f).fpoints = double(faspoints.Location);
 
                 if contains(ROItype, 'Hough')
                     % define aponeurosis tracker
                     apopoints = detectMinEigenFeatures(I_amasked,'FilterSize',11, 'MinQuality', 0.005);
                     apopoints = apopoints.selectStrongest(500);
-                    allapoints(:,:,f) =  double(apopoints.Location);
+                    points(f).apoints =  double(apopoints.Location);
                 end
 
             end
@@ -1476,13 +1476,13 @@ for i = 1:length(handles.Region)
                 end
 
                 % get location
-                allfpoints(:,:,f) = double(faspoints.Location);
+                points(f).fpoints = double(faspoints.Location);
 
                 if contains(ROItype, 'Hough')
                     % define aponeurosis tracker
                     apopoints = detectMinEigenFeatures(I_amasked,'FilterSize',11, 'MinQuality', 0.005);
                     apopoints = apopoints.selectStrongest(500);
-                    allapoints(:,:,f) =  double(apopoints.Location);
+                    points(f).apoints =  double(apopoints.Location);
                 end
 
             end
@@ -1506,7 +1506,7 @@ f = 1;
 ROIy = handles.Region(i).UT.ROIy{f};
 ROIx = handles.Region(i).UT.ROIx{f};
 
-fpoints = allfpoints(:,:,f);
+fpoints = points(f).fpoints;
 im = ims(:,:,f);
 
 % points must be in ROI
@@ -1526,7 +1526,7 @@ for f = frames(2:end)
     % points must be in ROI
     ROIy = handles.Region(i).UT.ROIy{f};
     ROIx = handles.Region(i).UT.ROIx{f};
-    fpoints = allfpoints(:,:,f);
+    fpoints = points(f).fpoints;
     inPoints = inpolygon(fpoints(:,1),fpoints(:,2), ROIx, ROIy);
     fpoints = fpoints(inPoints,:);                
 
@@ -1548,7 +1548,7 @@ h = waitbar(0,['Processing frame 1/', num2str(handles.US.NumFrames)],'Name','Run
 
 f = 1;
 
-apoints = allapoints(:,:,f);
+apoints = points(f).apoints;
 im = ims(:,:,f);
 
 apointTracker = vision.PointTracker('NumPyramidLevels',4,'MaxIterations',50,'MaxBidirectionalError',inf,'BlockSize',handles.UTT.UT.BlockSize);
@@ -1568,7 +1568,7 @@ for f = frames(2:end)
     d = handles.UTT.TT.parms.apo.deep.cut;
     ROIyd = [d(1) d(2) d(2) d(1) d(1)]' * m;
 
-    apoints = allapoints(:,:,f);
+    apoints = points(f).apoints;
 
     % must be in ROI
     dinPoints = inpolygon(apoints(:,1),apoints(:,2), ROIx, ROIyd);
