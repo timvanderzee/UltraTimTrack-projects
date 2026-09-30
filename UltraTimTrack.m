@@ -827,6 +827,10 @@ if isfield(handles,'Region')
     end
 end
 
+if ~isfolder(fullfile(handles.US.pname, 'Tracked'))
+    mkdir(fullfile(handles.US.pname, 'Tracked'))
+end
+
 filename = fullfile(handles.US.pname, 'Tracked', [handles.US.fname(1:end-4), '_tracked']);
 save(filename,'TrackingData','Fdat');
 
